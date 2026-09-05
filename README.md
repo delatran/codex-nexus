@@ -79,6 +79,14 @@ model and host controlled. The package does not set a numeric token budget.
 See [the Astra runtime contract](docs/ASTRA.md) for the selected settings and
 their evidence limits.
 
+## Development and releases
+
+`main` contains stable releases. Ongoing Astra work happens on `gpt-6-astra`;
+completed, verified changes are merged into `main` and receive an annotated
+tag such as `gpt-6-astra-v1.0.0`. The development branch continues after each
+release. See [the release workflow](CONTRIBUTING.md#branches-and-releases)
+for readiness checks, versioning, and publication steps.
+
 ## Skills
 
 Load a skill when its procedure changes the task. Ordinary coding, explanations,

@@ -6,6 +6,61 @@ comments, configuration, and documentation in English. Never put credentials,
 private machine paths, or user-specific configuration values in distributable
 files.
 
+## Branches and releases
+
+`main` holds stable releases. `gpt-6-astra` is the persistent development
+branch for Astra: commit and push focused changes there as often as needed.
+Ordinary development does not advance `main` or create a release tag. Keep
+GitHub's default branch on `main` and the development checkout on
+`gpt-6-astra` between releases.
+
+A release is ready when its intended scope is complete, the full diff has
+been reviewed, relevant local checks pass, and all `verify` CI jobs pass for
+the exact development commit. Commit count is not a release criterion.
+Follow the local workflow below and add runtime or installation checks when
+the changed behavior requires them. Commit the regenerated source manifest
+with its owning changes. Remote publication remains subject to the owner's
+authorization for the repository and effect.
+
+This release cycle applies while `main` targets Astra. If `main` adopts
+another model, keep any ongoing Astra maintenance separate and transfer only
+applicable shared fixes; do not merge the two model branches wholesale.
+
+For an authorized release:
+
+1. Start with a clean working tree, fetch `origin`, and confirm that the local
+   development branch matches its remote branch. Update local `main` with a
+   fast-forward from `origin/main`. Bring any new `main` changes into
+   `gpt-6-astra` before release review, resolve conflicts there, regenerate
+   the manifest if source changed, and verify and push that candidate.
+2. After the candidate's CI passes, switch to `main` and merge
+   `gpt-6-astra` with `git merge --no-ff gpt-6-astra`. The release merge
+   must have the same source tree as the reviewed candidate. If it does not,
+   return to development, reconcile the changes, and validate the new result
+   before publication.
+3. Push `main` without forcing and wait for every `verify` job on the exact
+   merge commit to succeed. If CI fails, fix and verify the failure before
+   tagging; do not label a failed candidate as a completed release.
+4. Create an annotated tag on that verified `main` commit using
+   `git tag -a gpt-6-astra-vX.Y.Z main -m "Astra X.Y.Z"`, replacing the
+   version placeholders, then push that exact tag. Check the remote tag's
+   peeled commit against the verified release commit. Existing release tags
+   are fixed: corrections receive a new version, never a moved tag.
+5. Fast-forward `gpt-6-astra` to `main`, push the development branch, and
+   leave it checked out for the next change. Keep both branches; release
+   merges preserve development history.
+
+The first release is `gpt-6-astra-v1.0.0`. Increment the patch version for
+compatible fixes, the minor version for compatible additions, and the major
+version for incompatible changes to the supported setup or runtime contract.
+A tag identifies this repository's release, not a new OpenAI model version.
+
+To inspect an older release without changing the active installation, use a
+separate worktree at its tag. Installed skills read the linked checkout
+directly; changing that checkout's branch can change the skills exposed to
+new tasks. If a published release needs correction, use a reviewed follow-up
+commit or revert and a new tag rather than rewriting shared history.
+
 ## Make a focused change
 
 Every change should have a concrete consumer and an observable verifier.

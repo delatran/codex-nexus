@@ -32,9 +32,9 @@
       "sha256": "fb9c46ff54f2dbc504108a6ead37854837ac3e16353bdf7bf83f5b238b629153"
     },
     {
-      "bytes": 3464,
+      "bytes": 6679,
       "path": "CONTRIBUTING.md",
-      "sha256": "49787852e3e2f6fe8601cf74596fbf328886d2350ba11ad68519e87fe1c6fd80"
+      "sha256": "f2f37f5ab4349e3ac2602865d0dc4f2a92c1645e8d99a64202e97284d9748253"
     },
     {
       "bytes": 1065,
@@ -42,9 +42,9 @@
       "sha256": "acfba40c9c93d9aa33757716e527fd8c44525778a220167fa3681f423fe0ac0f"
     },
     {
-      "bytes": 7005,
+      "bytes": 7399,
       "path": "README.md",
-      "sha256": "04eff53c575b2aea9720fa721cd1b1f8261e1d3e2652bbdd1a7990cbaf89b06c"
+      "sha256": "2147d3ca7ee5481e55f7fe888e8f42525d1462b55da48d17cd8a1d3ed27e9eae"
     },
     {
       "bytes": 1490,
@@ -202,9 +202,9 @@
       "sha256": "4ecf8560137b9cfea4f13a982da8b2b3beae11430bf4f27965bf0926d1dcea74"
     },
     {
-      "bytes": 2814,
+      "bytes": 2959,
       "path": "skills/repository-maintenance/SKILL.md",
-      "sha256": "52cfc2503790427f6f59a7301797f8a3a15df359e8d20a9d17445e5da3115924"
+      "sha256": "f4ca37e21a8060d7a2193d20c1a6ab0d83fd48112f029381845a5db13b6e24f0"
     },
     {
       "bytes": 2752,
@@ -288,5 +288,5 @@
     }
   ],
   "schema": "codex-nexus/source-inventory/v1",
-  "source_bytes": 562172
+  "source_bytes": 565926
 }
