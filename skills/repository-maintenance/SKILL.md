@@ -9,6 +9,9 @@ Use this skill only when the requested change targets this repository's skills,
 runtime contract, setup entrypoint, rules, manifests, or verification scripts.
 It supplies repository-specific source ownership and gates.
 
+For this repository's branch selection, commits, and releases, follow the
+[contribution workflow](../../CONTRIBUTING.md#branches-and-releases).
+
 Keep current source authoritative:
 
 - Edit the source that owns the requested behavior; use the
