@@ -1,0 +1,33 @@
+model = "gpt-6-astra"
+model_reasoning_effort = "ultra"
+plan_mode_reasoning_effort = "ultra"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+allow_login_shell = false
+web_search = "live"
+
+[features]
+apps = true
+fast_mode = true
+memories = true
+multi_agent_v2 = true
+prevent_idle_sleep = true
+shell_tool = true
+shell_zsh_fork = false
+unified_exec = true
+
+[features.context_management]
+experimental_mode = true
+
+[features.network_proxy]
+enabled = true
+
+[agents]
+default_subagent_model = "gpt-6-astra"
+default_subagent_reasoning_effort = "max"
+max_concurrent_threads_per_session = 1000000
+
+[apps._default]
+enabled = true
+destructive_enabled = false
+open_world_enabled = false

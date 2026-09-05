@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reproducible ML"
+  short_description: "Run reproducible ML and verify evidence"
+  default_prompt: "Use $reproducible-ml to plan or run an ML experiment and verify the evidence supporting its results."
