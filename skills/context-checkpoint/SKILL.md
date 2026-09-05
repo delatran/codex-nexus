@@ -50,6 +50,11 @@ relative paths, current hashes, generation correlation, duplicate IDs, unresolve
 questions, and verifier states. It is a read-only check: it reports stale and
 pending blockers without executing a tool or resuming work.
 
+Question status is one of `open`, `unresolved`, `pending`, `answered`, `resolved`,
+or `closed`. The first three block the packet's readiness signal; unsupported
+values are errors. A terminal label records a declared resolution and does not
+prove that an answer was received or grant permission for the next action.
+
 The age window is configurable with max_age_seconds; use None only when the
 caller has another explicit freshness bound. Hash and generation checks still
 apply when the timestamp window is disabled.

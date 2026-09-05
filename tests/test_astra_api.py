@@ -142,6 +142,58 @@ class ResponsesRequestTests(unittest.TestCase):
                         error["path"] == "$.tools[0].allowed_callers" for error in errors
                     ))
 
+    def test_async_must_be_boolean_when_supplied(self) -> None:
+        for tool_type in ("function", "custom", "web_search"):
+            for value in (None, 0, 1, "true", "false", [], {}):
+                with self.subTest(tool_type=tool_type, value=value):
+                    request = _request()
+                    request["tools"] = [{"type": tool_type, "name": "lookup", "async": value}]
+                    errors = VALIDATOR.validate_response_request(request)
+                    self.assertEqual([error["path"] for error in errors], ["$.tools[0].async"])
+
+    def test_async_preserves_optional_callers_and_direct_calls(self) -> None:
+        for tool_type in ("function", "custom"):
+            for options in ({}, {"allowed_callers": None}, {"allowed_callers": []},
+                            {"allowed_callers": ["direct"]}):
+                with self.subTest(tool_type=tool_type, options=options):
+                    request = _request()
+                    request["tools"] = [{
+                        "type": tool_type, "name": "lookup", "async": True, **options,
+                    }]
+                    self.assertEqual(VALIDATOR.validate_response_request(request), [])
+
+    def test_non_async_tools_keep_valid_programmatic_callers(self) -> None:
+        for tool_type in ("function", "custom"):
+            for async_options in ({}, {"async": False}):
+                for callers in (None, [], ["direct"], ["programmatic"], ["direct", "programmatic"]):
+                    with self.subTest(tool_type=tool_type, async_options=async_options, callers=callers):
+                        request = _request()
+                        request["tools"] = [{
+                            "type": tool_type, "name": "lookup",
+                            "allowed_callers": callers, **async_options,
+                        }]
+                        self.assertEqual(VALIDATOR.validate_response_request(request), [])
+
+    def test_allowed_callers_rejects_wrong_containers_and_members(self) -> None:
+        for tool_type in ("function", "custom"):
+            for async_options in ({}, {"async": False}, {"async": True}):
+                for callers, suffix in (
+                    ("programmatic", ""), (True, ""), (1, ""), ({}, ""),
+                    ([None], "[0]"), ([{}], "[0]"), ([["direct"]], "[0]"),
+                    (["direct", "unknown"], "[1]"),
+                ):
+                    with self.subTest(tool_type=tool_type, async_options=async_options, callers=callers):
+                        request = _request()
+                        request["tools"] = [{
+                            "type": tool_type, "name": "lookup",
+                            "allowed_callers": callers, **async_options,
+                        }]
+                        errors = VALIDATOR.validate_response_request(request)
+                        self.assertEqual(
+                            [error["path"] for error in errors],
+                            [f"$.tools[0].allowed_callers{suffix}"],
+                        )
+
     def test_async_direct_calls_allow_unrelated_programmatic_tools(self) -> None:
         for tool_type in ("function", "custom"):
             with self.subTest(tool_type=tool_type):
@@ -233,6 +285,41 @@ class ResponsesRequestTests(unittest.TestCase):
         errors = VALIDATOR.validate_safety_state({"monitor_state": []})
         self.assertTrue(errors)
         self.assertTrue(all(set(error) == {"path", "message"} for error in errors))
+
+    def test_safety_flags_require_booleans_in_every_monitor_state(self) -> None:
+        for status in ("clear", "review_required", "monitor_stopped"):
+            for field in ("retry", "consequential_action"):
+                for value in (None, 0, 1, 0.0, 1.0, "false", "true", [], {}):
+                    with self.subTest(status=status, field=field, value=value):
+                        errors = VALIDATOR.validate_safety_state({"monitor_state": status, field: value})
+                        self.assertEqual([error["path"] for error in errors], [f"$.{field}"])
+
+    def test_safety_retry_count_requires_nonnegative_integer_or_null(self) -> None:
+        for status in ("clear", "review_required", "monitor_stopped"):
+            for value in (False, True, -1, 0.0, 1.0, "0", [], {}):
+                with self.subTest(status=status, value=value):
+                    errors = VALIDATOR.validate_safety_state({"monitor_state": status, "retry_count": value})
+                    self.assertEqual([error["path"] for error in errors], ["$.retry_count"])
+
+    def test_safety_preserves_defaults_and_optional_retry_count(self) -> None:
+        for state in ({}, {"monitor_state": "clear"},
+                      {"monitor_state": "review_required"}, {"monitor_state": "monitor_stopped"}):
+            for count_options in ({}, {"retry_count": None}, {"retry_count": 0}):
+                with self.subTest(state=state, count_options=count_options):
+                    self.assertEqual(VALIDATOR.validate_safety_state({
+                        **state, **count_options, "retry": False, "consequential_action": False,
+                    }), [])
+        for state in ({}, {"monitor_state": "clear"}):
+            with self.subTest(state=state):
+                self.assertEqual(VALIDATOR.validate_safety_state({
+                    **state, "retry": True, "consequential_action": True, "retry_count": 2,
+                }), [])
+
+    def test_positive_retry_count_is_forbidden_during_review_or_stop(self) -> None:
+        for status in ("review_required", "monitor_stopped"):
+            with self.subTest(status=status):
+                errors = VALIDATOR.validate_safety_state({"monitor_state": status, "retry_count": 1})
+                self.assertEqual([error["path"] for error in errors], ["$.retry"])
 
     def test_provider_stop_keeps_retry_and_actions_stopped_after_review(self) -> None:
         errors = VALIDATOR.validate_safety_state({

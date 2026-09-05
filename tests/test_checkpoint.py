@@ -176,6 +176,29 @@ class CheckpointTests(unittest.TestCase):
         self.assertFalse(report["ok"])
         self.assertIn("verifier-skipped", {item["code"] for item in report["errors"]})
 
+    def test_unknown_question_status_never_clears_readiness(self) -> None:
+        for status in ("waiting_for_owner", "Open", "open ", "approved_by_tool", [], True, None):
+            with self.subTest(status=status):
+                packet = self._packet()
+                packet["unresolved_questions"] = [{"question": "Which source?", "status": status}]
+                report = validate_checkpoint(packet, self.root)
+                self.assertFalse(report["ok"])
+                self.assertFalse(report["continuation_ready"])
+                self.assertIn("question-status", {item["code"] for item in report["errors"]})
+                with self.assertRaises(CheckpointError):
+                    self._packet(unresolved_questions=packet["unresolved_questions"])
+
+    def test_explicit_question_states_preserve_readiness_and_authority_contract(self) -> None:
+        for status in ("open", "unresolved", "pending", "answered", "resolved", "closed"):
+            with self.subTest(status=status):
+                packet = self._packet(unresolved_questions=[{"question": "Which source?", "status": status}])
+                report = validate_checkpoint(packet, self.root)
+                resolved = status in {"answered", "resolved", "closed"}
+                self.assertEqual(report["ok"], resolved)
+                self.assertEqual(report["continuation_ready"], resolved)
+                self.assertFalse(report["authority_granted"])
+                self.assertFalse(report["completion_proven"])
+
     def test_pending_work_and_open_question_are_blockers(self) -> None:
         packet = self._packet(
             pending_tools=[{"id": "tool-1", "state": "pending"}],

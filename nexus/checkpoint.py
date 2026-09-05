@@ -24,6 +24,9 @@ _ACTIVE = frozenset({"pending", "in_flight", "running", "review_required", "awai
 _TERMINAL = frozenset({"completed", "failed", "cancelled", "rejected"})
 _STATES = _ACTIVE | _TERMINAL
 _VERIFIER_STATES = frozenset({"observed", "skipped", "failed", "pending"})
+_QUESTION_OPEN = frozenset({"open", "unresolved", "pending"})
+_QUESTION_RESOLVED = frozenset({"answered", "resolved", "closed"})
+_QUESTION_STATES = _QUESTION_OPEN | _QUESTION_RESOLVED
 
 
 class CheckpointError(ValueError):
@@ -160,6 +163,8 @@ def _questions(values: Any) -> list[dict[str, Any]]:
         if not _text(item.get("question")):
             raise CheckpointError(f"unresolved_questions[{index}] is invalid")
         item.setdefault("status", "open")
+        if not isinstance(item["status"], str) or item["status"] not in _QUESTION_STATES:
+            raise CheckpointError(f"unresolved_questions[{index}].status is unsupported")
         output.append(item)
     return output
 
@@ -271,7 +276,10 @@ def create_checkpoint(
             try:
                 target.resolve(strict=False).relative_to(root_path.resolve(strict=True))
             except (OSError, RuntimeError, ValueError):
-                workspace.write_json(target, packet)
+                try:
+                    workspace.write_json(target, packet, overwrite=False)
+                except FileExistsError as exc:
+                    raise CheckpointError("destination already exists") from exc
             else:
                 raise CheckpointError("destination resolves inside source root")
         else:
@@ -493,9 +501,9 @@ def validate_checkpoint(
             continue
         if not _text(question):
             errors.append(_issue("question", path, "question must be non-empty"))
-        if not _text(status):
-            errors.append(_issue("question-status", f"{path}.status", "status must be non-empty text"))
-        elif status in {"open", "unresolved", "pending"}:
+        if not isinstance(status, str) or status not in _QUESTION_STATES:
+            errors.append(_issue("question-status", f"{path}.status", "unsupported question status"))
+        elif status in _QUESTION_OPEN:
             errors.append(_issue("unresolved-question", path, "question blocks safe continuation"))
 
     receipts = data.get("verifier_receipts", data.get("verifiers"))

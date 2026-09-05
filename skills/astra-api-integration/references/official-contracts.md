@@ -63,6 +63,15 @@ async tools with parallel tool calls in multi-agent mode. Set
 requires this value without claiming an omitted provider default. These
 incompatibilities apply to the API combination, not all host parallel work.
 
+The official Python SDK [function tool type](https://github.com/openai/openai-python/blob/be928151372e4b62adb4a1571cda52ad759b38be/src/openai/types/responses/function_tool_param.py)
+and [custom tool type](https://github.com/openai/openai-python/blob/be928151372e4b62adb4a1571cda52ad759b38be/src/openai/types/responses/custom_tool_param.py)
+define `async` as an optional boolean and `allowed_callers` as an optional,
+nullable array of `direct` or `programmatic` strings. The helper checks these
+types before compatibility rules; strings such as `"true"` cannot stand in for
+booleans. Omitted or null callers and empty arrays remain accepted by this
+partial schema check. A valid caller list does not override the incompatibility
+between async tools and programmatic calls.
+
 ## Mid-turn steering
 
 Source: https://developers.openai.com/api/docs/guides/steering
@@ -133,6 +142,16 @@ Codex Nexus uses `review_required` for a local review state and
 provider switches. Human review can inform an allowed next action but cannot
 clear a provider or host block. Keep unrelated work governed by its own scope;
 never use a new task, transport, or request to evade the stopped workflow.
+
+In the helper's local safety envelope, omitted `monitor_state` retains the
+`clear` default. `retry` and `consequential_action` are optional booleans;
+supplied nulls, strings, and numbers are invalid. `retry_count` may be omitted,
+null, or a nonnegative integer; a boolean is not a count. A missing or null
+count preserves the existing convention and does not prove an empty retry
+history. These type checks apply in every state. In `review_required` or
+`monitor_stopped`, the helper rejects either action flag set to true and any
+positive retry count. The envelope records declared state only; it cannot
+observe dispatch, recover omitted history, or grant authority.
 
 ## Host boundary
 

@@ -264,13 +264,24 @@ def write_text_atomic(
     *,
     encoding: str = "utf-8",
     retries: int = 4,
+    overwrite: bool = True,
 ) -> Path:
-    """Write text through a sibling temporary file and bounded replace retry."""
+    """Publish complete text, optionally requiring an absent destination.
+
+    Exclusive publication uses a hard link to the staged sibling file so a
+    concurrently created destination cannot be replaced between check and write.
+    """
 
     if not isinstance(text, str):
         raise TypeError("text must be a string")
     target = _absolute(path, label="path")
+    if not overwrite:
+        _reject_link_components(target.parent)
+        if os.path.lexists(target):
+            raise FileExistsError(f"destination already exists: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
+    if not overwrite:
+        _reject_link_components(target.parent)
     fd, temporary_name = tempfile.mkstemp(
         prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent)
     )
@@ -284,7 +295,11 @@ def write_text_atomic(
         attempts = max(0, int(retries))
         for attempt in range(attempts + 1):
             try:
-                os.replace(temporary, target)
+                if overwrite:
+                    os.replace(temporary, target)
+                else:
+                    _reject_link_components(target.parent)
+                    os.link(temporary, target)
                 return target
             except PermissionError:
                 if attempt >= attempts:
@@ -309,8 +324,9 @@ def write_json(
     payload: Mapping[str, Any] | Sequence[Any],
     *,
     retries: int = 4,
+    overwrite: bool = True,
 ) -> Path:
-    """Write stable UTF-8 JSON with a trailing newline."""
+    """Write stable UTF-8 JSON; use overwrite=False for a new receipt."""
 
     serialized = json.dumps(
         payload,
@@ -319,7 +335,7 @@ def write_json(
         sort_keys=True,
         separators=(",", ": "),
     )
-    return write_text_atomic(path, serialized + "\n", retries=retries)
+    return write_text_atomic(path, serialized + "\n", retries=retries, overwrite=overwrite)
 
 
 def snapshot(
@@ -346,7 +362,7 @@ def snapshot(
         "source_file_count": len(files),
         "source_byte_count": sum(int(item["size"]) for item in files),
     }
-    write_json(destination_path, manifest)
+    write_json(destination_path, manifest, overwrite=False)
     return manifest
 
 
@@ -420,7 +436,7 @@ def plan_quarantine(
     for relative, target in requested:
         kind = _path_kind(target)
         files = _tree_inventory_relative(target, root_path)
-        target_backup = backup_path / Path(relative)
+        target_backup = _quarantine_backup_target(root_path, backup_path, relative)
         if os.path.lexists(target_backup):
             raise QuarantineError(f"backup destination already exists: {target_backup}")
         targets.append(
@@ -447,6 +463,129 @@ def plan_quarantine(
         )
     ).hexdigest()
     return {**unsigned, "plan_sha256": plan_digest, "status": "planned"}
+
+
+def _quarantine_backup_target(root: Path, backup_root: Path, relative: str) -> Path:
+    """Keep every recovery destination below its backup root and outside source."""
+
+    target = backup_root / Path(relative)
+    if not _is_within(target.absolute(), backup_root.absolute()):
+        raise PathSafetyError(f"quarantine backup path leaves backup root: {relative}")
+    _reject_link_components(target)
+    if not _is_within(target.resolve(strict=False), backup_root.resolve(strict=False)):
+        raise PathSafetyError(f"quarantine backup path resolves outside backup root: {relative}")
+    _assert_outside(target, root, label="quarantine backup destination")
+    return target
+
+
+def _quarantine_files(targets: Sequence[Path], root: Path) -> dict[str, dict[str, Any]]:
+    observed: dict[str, dict[str, Any]] = {}
+    for target in targets:
+        _reject_link_components(target)
+        for entry in _tree_inventory_relative(target, root):
+            observed[entry["path"]] = entry
+    return observed
+
+
+def _verify_quarantine_files(
+    targets: Sequence[Path],
+    root: Path,
+    expected: Mapping[str, Mapping[str, Any]],
+    *,
+    label: str,
+) -> None:
+    observed = _quarantine_files(targets, root)
+    if set(observed) != set(expected):
+        raise QuarantineError(f"{label} file set changed")
+    for relative, entry in expected.items():
+        current = observed[relative]
+        if current["sha256"] != entry["sha256"] or current["size"] != entry["size"]:
+            raise QuarantineError(f"{label} hash changed: {relative}")
+
+
+def _copy_quarantine_target(source: Path, destination: Path) -> None:
+    """Copy to absent paths without replacing concurrent owner destinations."""
+
+    def copy_file(raw_source: str | Path, raw_destination: str | Path) -> str:
+        source_file, destination_file = Path(raw_source), Path(raw_destination)
+        _reject_link_components(source_file)
+        _reject_link_components(destination_file.parent)
+        if _path_kind(source_file) != "file":
+            raise PathSafetyError(f"quarantine copy requires a regular file: {source_file}")
+        # Create privately and exclusively, including during cross-volume copy.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0)
+        with source_file.open("rb") as reader:
+            descriptor = os.open(destination_file, flags, 0o600)
+            with os.fdopen(descriptor, "wb") as writer:
+                shutil.copyfileobj(reader, writer)
+                writer.flush()
+                os.fsync(writer.fileno())
+        shutil.copystat(source_file, destination_file, follow_symlinks=False)
+        return str(destination_file)
+
+    def reject_redirects(directory: str, names: list[str]) -> list[str]:
+        parent = Path(directory)
+        _reject_link_components(parent)
+        for name in names:
+            if _is_link_or_junction(parent / name):
+                raise PathSafetyError(f"quarantine copy does not follow redirects: {parent / name}")
+        return []
+
+    _reject_link_components(source)
+    _reject_link_components(destination.parent)
+    kind = _path_kind(source)
+    if kind == "file":
+        copy_file(source, destination)
+    elif kind == "directory":
+        shutil.copytree(
+            source, destination, copy_function=copy_file,
+            ignore=reject_redirects, symlinks=True,
+        )
+    else:
+        raise PathSafetyError(f"quarantine copy requires a regular target: {source}")
+
+
+def _cleanup_quarantine_capture(
+    source_root: Path,
+    capture_root: Path,
+    expected: Mapping[str, Mapping[str, Any]],
+    directories: set[Path],
+    *,
+    backup_root: Path,
+    backup_targets: Sequence[Path],
+) -> str | None:
+    """Remove verified private copies only; retain changed or unexpected paths."""
+
+    try:
+        _assert_outside(capture_root, source_root, label="quarantine capture cleanup")
+        _reject_link_components(capture_root)
+        _verify_quarantine_files(
+            backup_targets, backup_root, expected, label="backup before capture cleanup"
+        )
+        _verify_quarantine_files([capture_root], capture_root, expected, label="capture cleanup")
+        for relative, entry in expected.items():
+            target = _assert_safe_child(
+                capture_root, capture_root / Path(relative), label="capture cleanup file"
+            )
+            digest, size = _hash_and_size(target)
+            if digest != entry["sha256"] or size != entry["size"]:
+                raise QuarantineError(f"capture changed before cleanup: {relative}")
+            backup = _quarantine_backup_target(source_root, backup_root, relative)
+            backup_digest, backup_size = _hash_and_size(backup)
+            if backup_digest != entry["sha256"] or backup_size != entry["size"]:
+                raise QuarantineError(f"backup changed before capture cleanup: {relative}")
+            target.unlink()
+        # These directories were recorded before backup publication.  A new
+        # empty directory is not implicitly ours to delete, and a new file
+        # keeps its containing directory nonempty.
+        for directory in sorted(directories, key=lambda item: len(item.parts), reverse=True):
+            _reject_link_components(directory)
+            if directory != capture_root:
+                _assert_safe_child(capture_root, directory, label="capture cleanup directory")
+            directory.rmdir()
+    except (OSError, WorkspaceError) as exc:
+        return str(exc)
+    return None
 
 
 def _load_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
@@ -523,7 +662,7 @@ def _validate_plan_preconditions(plan: Mapping[str, Any]) -> tuple[Path, Path, l
         actual_kind = _path_kind(target)
         if actual_kind != kind:
             raise StalePlanError(f"quarantine target kind changed: {relative}")
-        target_backup = backup_path / Path(relative)
+        target_backup = _quarantine_backup_target(root_path, backup_path, relative)
         if os.path.lexists(target_backup):
             raise QuarantineError(f"backup destination already exists: {relative}")
         _reject_link_components(target_backup.parent)
@@ -552,101 +691,192 @@ def _validate_plan_preconditions(plan: Mapping[str, Any]) -> tuple[Path, Path, l
     return root_path, backup_path, target_specs
 
 
-def _restore_moved(moved: list[tuple[Path, Path]], *, root: Path) -> list[str]:
-    """Move already-quarantined paths back without following redirects."""
+def _restore_moved(
+    moved: list[tuple[Path, Path]],
+    *,
+    root: Path,
+    backup_root: Path,
+    expected: Mapping[str, Mapping[str, Any]],
+) -> list[str]:
+    """Recover attempted moves without consuming backups or replacing owners."""
 
     failures: list[str] = []
     for source, backup in reversed(moved):
         try:
-            if not os.path.lexists(source) and os.path.lexists(backup):
-                safe_source = _assert_safe_child(root, source, label="quarantine rollback path")
-                _reject_link_components(backup)
-                if safe_source.parent == root:
-                    _reject_link_components(root)
-                else:
-                    _assert_safe_child(root, safe_source.parent, label="quarantine rollback parent")
-                source.parent.mkdir(parents=True, exist_ok=True)
-                # A parent can be replaced while mkdir is in progress.  Check
-                # again immediately before the move so rollback never follows
-                # a newly inserted junction.
-                safe_source = _assert_safe_child(root, safe_source, label="quarantine rollback path")
-                _reject_link_components(backup)
-                shutil.move(str(backup), str(safe_source))
-        except (OSError, PathSafetyError) as exc:
+            relative = source.relative_to(root).as_posix()
+            required = {
+                name: entry for name, entry in expected.items()
+                if name == relative or name.startswith(relative + "/")
+            }
+            if os.path.lexists(source):
+                if not os.path.lexists(backup):
+                    _verify_quarantine_files([source], root, required, label="unmoved quarantine source")
+                    continue
+                raise QuarantineError(f"source path already exists; recovery remains at {backup}")
+            if not os.path.lexists(backup):
+                raise QuarantineError(f"recovery path is missing: {backup}")
+            saved = _quarantine_files([backup], backup_root)
+            # Preserve additions made during the original move, while refusing
+            # to present a changed or missing planned file as recovered.
+            for name, entry in required.items():
+                current = saved.get(name)
+                if current is None or current["sha256"] != entry["sha256"] or current["size"] != entry["size"]:
+                    raise QuarantineError(f"recovery content differs from the plan: {name}")
+            saved_kind = _path_kind(backup)
+            safe_source = _assert_safe_child(root, source, label="quarantine rollback path")
+            _reject_link_components(backup)
+            if safe_source.parent == root:
+                _reject_link_components(root)
+            else:
+                _assert_safe_child(root, safe_source.parent, label="quarantine rollback parent")
+            source.parent.mkdir(parents=True, exist_ok=True)
+            safe_source = _assert_safe_child(root, safe_source, label="quarantine rollback path")
+            if os.path.lexists(safe_source):
+                raise QuarantineError(f"source path appeared during rollback; recovery remains at {backup}")
+            _reject_link_components(backup)
+            _copy_quarantine_target(backup, safe_source)
+            if _path_kind(safe_source) != saved_kind:
+                raise QuarantineError("rollback copy did not restore the recorded path")
+            _verify_quarantine_files([safe_source], root, saved, label="quarantine rollback")
+            _verify_quarantine_files([backup], backup_root, saved, label="retained quarantine backup")
+        except (OSError, WorkspaceError) as exc:
             failures.append(f"{source}: {exc}")
     return failures
 
 
 def apply_quarantine(plan: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply a plan only after full preflight; roll back on post-move failure."""
+    """Capture planned paths, publish exclusive backups, and retain recovery."""
 
     loaded = _load_plan(plan)
     root_path, backup_path, target_specs = _validate_plan_preconditions(loaded)
     _reject_link_components(backup_path)
     backup_path.mkdir(parents=True, exist_ok=True)
     _reject_link_components(backup_path)
-    moved: list[tuple[Path, Path]] = []
+    capture_root = Path(tempfile.mkdtemp(prefix=".capture-", dir=str(backup_path)))
+    _assert_outside(capture_root, root_path, label="quarantine capture root")
+    _reject_link_components(capture_root)
+    capture_directories = {capture_root}
+    captured: list[tuple[Path, Path]] = []
+    published: list[tuple[Path, Path]] = []
+    backup_attempts: list[tuple[str, Path]] = []
+    expected = {entry["path"]: entry for entry in loaded["files"]}
     try:
         ordered_targets = sorted(
             target_specs,
             key=lambda item: item[0].relative_to(root_path).as_posix(),
         )
-        for target, target_backup, _spec in ordered_targets:
+        for target, target_backup, spec in ordered_targets:
             safe_target = _assert_safe_child(root_path, target, label="quarantine target")
             _reject_link_components(target_backup)
             if os.path.lexists(target_backup):
                 raise QuarantineError(f"backup destination appeared during quarantine: {target_backup}")
+            relative = spec["path"]
+            capture = _quarantine_backup_target(root_path, capture_root, relative)
+            capture.parent.mkdir(parents=True, exist_ok=True)
+            parent = capture.parent
+            while parent != capture_root:
+                capture_directories.add(parent)
+                parent = parent.parent
+            _reject_link_components(capture)
+            if os.path.lexists(capture):
+                raise QuarantineError(f"private capture path appeared during quarantine: {capture}")
+            safe_target = _assert_safe_child(root_path, safe_target, label="quarantine target")
+            # A cross-filesystem move can create a destination before raising.
+            # Capture in a new private directory before publishing the final
+            # backup, whose name may be claimed by another owner meanwhile.
+            captured.append((safe_target, capture))
+            shutil.move(str(safe_target), str(capture))
+            required = {
+                name: entry for name, entry in expected.items()
+                if name == relative or name.startswith(relative + "/")
+            }
+            _verify_quarantine_files([capture], capture_root, required, label="quarantine capture")
+            if spec["kind"] == "directory":
+                for directory, children, _files in os.walk(capture, followlinks=False):
+                    current = Path(directory)
+                    _reject_link_components(current)
+                    for name in children:
+                        _reject_link_components(current / name)
+                    capture_directories.add(current)
             target_backup.parent.mkdir(parents=True, exist_ok=True)
             _reject_link_components(target_backup)
-            safe_target = _assert_safe_child(root_path, safe_target, label="quarantine target")
-            shutil.move(str(safe_target), str(target_backup))
-            moved.append((safe_target, target_backup))
+            backup_attempts.append((relative, target_backup))
+            _copy_quarantine_target(capture, target_backup)
+            published.append((safe_target, target_backup))
 
         # Re-read all moved files from their backup locations before exposing a
         # successful receipt.  This catches a provider copy/replace mismatch.
-        expected = {entry["path"]: entry for entry in loaded["files"]}
-        observed: dict[str, dict[str, Any]] = {}
-        for target, target_backup, _spec in target_specs:
-            if _path_kind(target_backup) == "file":
-                digest, size = _hash_and_size(target_backup)
-                observed[target_backup.relative_to(backup_path).as_posix()] = {
-                    "sha256": digest,
-                    "size": size,
-                }
-            elif _path_kind(target_backup) == "directory":
-                for file_path in _iter_regular_files(target_backup, exclude_dirs=set()):
-                    digest, size = _hash_and_size(file_path)
-                    observed[file_path.relative_to(backup_path).as_posix()] = {
-                        "sha256": digest,
-                        "size": size,
-                    }
-            else:
-                raise QuarantineError(f"backup target disappeared: {target_backup}")
-        for relative, entry in expected.items():
-            got = observed.get(relative)
-            if got is None or got["sha256"] != entry["sha256"] or got["size"] != entry["size"]:
-                raise QuarantineError(f"backup verification failed: {relative}")
+        _verify_quarantine_files(
+            [backup for _target, backup, _spec in target_specs],
+            backup_path,
+            expected,
+            label="quarantine backup",
+        )
+        _verify_quarantine_files(
+            [capture for _source, capture in captured],
+            capture_root, expected, label="retained quarantine capture",
+        )
+        for target, _backup, _spec in target_specs:
+            safe_target = _assert_safe_child(root_path, target, label="quarantine source postcheck")
+            if os.path.lexists(safe_target):
+                raise QuarantineError("a source path remained or appeared during quarantine")
+        cleanup_problem = _cleanup_quarantine_capture(
+            root_path, capture_root, expected, capture_directories,
+            backup_root=backup_path,
+            backup_targets=[backup for _target, backup, _spec in target_specs],
+        )
+        # A cleanup warning can describe a retained capture, but it cannot
+        # make an invalid final backup into an applied quarantine.
+        _verify_quarantine_files(
+            [backup for _target, backup, _spec in target_specs],
+            backup_path, expected, label="final quarantine backup",
+        )
     except Exception as exc:
-        failures = _restore_moved(moved, root=root_path)
+        failures = _restore_moved(
+            captured,
+            root=root_path,
+            backup_root=capture_root,
+            expected=expected,
+        )
+        retained = [relative for relative, path in backup_attempts if os.path.lexists(path)]
+        captured_paths = [
+            source.relative_to(root_path).as_posix()
+            for source, capture in captured if os.path.lexists(capture)
+        ]
+        capture_state = (
+            f"capture directory remains at {capture_root}; captured paths present={captured_paths}"
+            if os.path.lexists(capture_root)
+            else f"capture directory is absent at {capture_root}"
+        )
+        recovery = (
+            f"{capture_state}; "
+            f"backup paths retained for reconciliation={retained} under {backup_path}"
+        )
         if failures:
             raise QuarantineError(
-                f"quarantine failed and rollback was incomplete: {exc}; rollback={failures}"
+                f"quarantine failed and rollback was incomplete: {exc}; rollback={failures}; {recovery}"
             ) from exc
-        raise QuarantineError(f"quarantine failed; all moved paths were restored: {exc}") from exc
+        raise QuarantineError(
+            f"quarantine failed; all moved paths were restored; {recovery}: {exc}"
+        ) from exc
 
-    return {
+    result = {
         "schema": "codex-nexus/quarantine-receipt/v1",
         "status": "applied",
-        "moved_count": len(moved),
+        "moved_count": len(published),
         "moved": [
             {
                 "source": source.relative_to(root_path).as_posix(),
                 "backup": backup.relative_to(backup_path).as_posix(),
             }
-            for source, backup in moved
+            for source, backup in published
         ],
         "plan_sha256": loaded["plan_sha256"],
     }
+    if cleanup_problem is not None:
+        result["capture_retained"] = capture_root.relative_to(backup_path).as_posix()
+        result["warnings"] = [f"capture cleanup incomplete: {cleanup_problem}"]
+    return result
 
 
 def restore_quarantine(
@@ -656,9 +886,10 @@ def restore_quarantine(
     """Restore every path recorded by an applied quarantine receipt.
 
     Restoration is conservative: an existing source path is treated as a
-    conflict and is never overwritten.  Backup content is hash-checked before
-    the first restore move, and a partial restore is moved back to the backup
-    location before an error is reported.
+    conflict and is never overwritten.  Exclusive copies preserve the original
+    backup, including after success.  Final source and backup hashes are both
+    checked.  A failed restore retains partial copies and owner edits in place
+    and identifies the affected source paths for reconciliation.
     """
 
     loaded = _load_plan(plan)
@@ -710,10 +941,7 @@ def restore_quarantine(
         )
         if os.path.lexists(source):
             raise QuarantineError(f"restore source path already exists: {relative}")
-        backup = backup_path / Path(relative)
-        if not _is_within(backup.absolute(), backup_path.absolute()):
-            raise PathSafetyError(f"quarantine backup path leaves backup root: {relative}")
-        _reject_link_components(backup)
+        backup = _quarantine_backup_target(root_path, backup_path, relative)
         if not os.path.lexists(backup) or _path_kind(backup) != kind:
             raise QuarantineError(f"quarantine backup target is unavailable: {relative}")
         target_specs.append((source, backup, relative))
@@ -730,20 +958,11 @@ def restore_quarantine(
     if receipt_pairs != expected_pairs:
         raise QuarantineError("quarantine receipt does not cover the planned targets")
 
-    observed: dict[str, dict[str, Any]] = {}
-    for _source, backup, _relative in target_specs:
-        for entry in _tree_inventory_relative(backup, backup_path):
-            observed[entry["path"]] = entry
-    if set(observed) != set(expected_files):
-        raise QuarantineError("quarantine backup file set changed")
-    for relative, expected in expected_files.items():
-        actual = observed[relative]
-        if actual["sha256"] != expected["sha256"] or actual["size"] != expected["size"]:
-            raise QuarantineError(f"quarantine backup hash changed: {relative}")
-
-    restored: list[tuple[Path, Path]] = []
+    backups = [backup for _source, backup, _relative in target_specs]
+    _verify_quarantine_files(backups, backup_path, expected_files, label="quarantine backup")
+    attempted: list[tuple[Path, str]] = []
     try:
-        for source, backup, _relative in sorted(target_specs, key=lambda item: item[2], reverse=True):
+        for source, backup, relative in sorted(target_specs, key=lambda item: item[2], reverse=True):
             safe_source = _assert_safe_child(root_path, source, label="quarantine restore path")
             if os.path.lexists(safe_source):
                 raise QuarantineError(f"restore source path appeared during restore: {source}")
@@ -753,48 +972,36 @@ def restore_quarantine(
             else:
                 _assert_safe_child(root_path, safe_source.parent, label="quarantine restore parent")
             source.parent.mkdir(parents=True, exist_ok=True)
-            # Recheck both sides immediately before moving.  This catches a
-            # parent junction inserted after the initial restore preflight.
+            # Recheck both sides before copying.  Exclusive creation still
+            # refuses a destination that appears after the existence check.
             safe_source = _assert_safe_child(root_path, safe_source, label="quarantine restore path")
             if os.path.lexists(safe_source):
                 raise QuarantineError(f"restore source path appeared during restore: {source}")
             _reject_link_components(backup)
-            shutil.move(str(backup), str(safe_source))
-            restored.append((safe_source, backup))
+            attempted.append((safe_source, relative))
+            _copy_quarantine_target(backup, safe_source)
+        _verify_quarantine_files(
+            [source for source, _backup, _relative in target_specs],
+            root_path, expected_files, label="quarantine restored source",
+        )
+        _verify_quarantine_files(backups, backup_path, expected_files, label="retained quarantine backup")
     except Exception as exc:
-        rollback_failures: list[str] = []
-        for source, backup in reversed(restored):
-            try:
-                if os.path.lexists(source) and not os.path.lexists(backup):
-                    safe_source = _assert_safe_child(root_path, source, label="quarantine restore rollback path")
-                    _reject_link_components(backup)
-                    if safe_source.parent == root_path:
-                        _reject_link_components(root_path)
-                    else:
-                        _assert_safe_child(
-                            root_path,
-                            safe_source.parent,
-                            label="quarantine restore rollback parent",
-                        )
-                    backup.parent.mkdir(parents=True, exist_ok=True)
-                    _reject_link_components(backup)
-                    shutil.move(str(safe_source), str(backup))
-            except (OSError, PathSafetyError) as rollback_error:
-                rollback_failures.append(f"{source}: {rollback_error}")
-        if rollback_failures:
+        partial = [relative for source, relative in attempted if os.path.lexists(source)]
+        if partial:
             raise QuarantineError(
-                f"quarantine restore failed and rollback was incomplete: {exc}; "
-                f"rollback={rollback_failures}"
+                f"quarantine restore was incomplete: {exc}; "
+                f"source paths retained for reconciliation={partial}; backup retained at {backup_path}"
             ) from exc
-        raise QuarantineError(f"quarantine restore failed; backup was preserved: {exc}") from exc
+        raise QuarantineError(f"quarantine restore failed; backup retained at {backup_path}: {exc}") from exc
 
     return {
         "schema": "codex-nexus/quarantine-restore-receipt/v1",
         "status": "restored",
-        "restored_count": len(restored),
+        "restored_count": len(target_specs),
+        "backup_retained": True,
         "restored": [
             {"source": source.relative_to(root_path).as_posix(), "backup": backup.relative_to(backup_path).as_posix()}
-            for source, backup in restored
+            for source, backup, _relative in target_specs
         ],
         "plan_sha256": loaded["plan_sha256"],
     }

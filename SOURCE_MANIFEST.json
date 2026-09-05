@@ -1,5 +1,5 @@
 {
-  "file_count": 57,
+  "file_count": 58,
   "files": [
     {
       "bytes": 686,
@@ -52,9 +52,9 @@
       "sha256": "17ec1470039f83957c52aae5d8602a961f937b7e381d9bcefababf64e43e98b2"
     },
     {
-      "bytes": 5331,
+      "bytes": 5694,
       "path": "docs/ARCHITECTURE.md",
-      "sha256": "d7675a91e9cbf9fcdfc7e9fc6ed653fbfb9d3c8350cfda34e645f5e7aed76c68"
+      "sha256": "ca31e653a7a4804071e89f1d2408c0bb32765bbebdc47055ce9c5639f533b4f1"
     },
     {
       "bytes": 7863,
@@ -62,9 +62,9 @@
       "sha256": "d1b4043e83a738880d1f6f7fdccda34e0680cb2665c5ea6ab9b5d8932edbecb1"
     },
     {
-      "bytes": 7294,
+      "bytes": 7612,
       "path": "docs/EVALUATION.md",
-      "sha256": "7815e9eedbdc48c7cf2cb81ec14573fe9d9461bacfa173c53a576d9fa5856662"
+      "sha256": "c3babf2be07b6243cfc77803b79037217dfeac38601cfd4f6316c14ac228592e"
     },
     {
       "bytes": 11748,
@@ -72,9 +72,9 @@
       "sha256": "1f2658aeb9cd40ab3156b3a27171e5a868c05a31e9654203f4736d40847e2b68"
     },
     {
-      "bytes": 4650,
+      "bytes": 5433,
       "path": "docs/VERIFICATION.md",
-      "sha256": "c50ca25e4002728d59cafc32009d02ba62da599619922713c3a2a2f765909de1"
+      "sha256": "04be37d5fda8d3b14b4e815f7834a1516a96a8b8c381716f141d3b7d683acd53"
     },
     {
       "bytes": 57,
@@ -82,14 +82,14 @@
       "sha256": "a834225489ed3f5786043d1e0bd34055f538d2d72f0f5e663926af6b90696c7c"
     },
     {
-      "bytes": 3988,
+      "bytes": 4005,
       "path": "nexus/__main__.py",
-      "sha256": "dc7a6fdb2dfb93b0e75ae774fe529b23506eab3b4d547c9277eadf7275880323"
+      "sha256": "2c2b51e730677ad5d0e2ccdd8558a37452ecd0fde107ec21c893a4e9c5fb302b"
     },
     {
-      "bytes": 25477,
+      "bytes": 26034,
       "path": "nexus/checkpoint.py",
-      "sha256": "fcc99c7f3aabce49be04fdcd1f52d89cdc73b61ef202359eb392c0593ce7c6e1"
+      "sha256": "c13a3e19ae0b2e671c60221f5de430f37c4f8d1ff9cd1bb91b58e78cd7402c10"
     },
     {
       "bytes": 36849,
@@ -117,9 +117,9 @@
       "sha256": "cb509e08b0c3e632054142b0e286a1237590b30e6cb399987de4d9a4a9d751e3"
     },
     {
-      "bytes": 35099,
+      "bytes": 44842,
       "path": "nexus/workspace.py",
-      "sha256": "ab5304f36c823b1dd6cfb330807c07460ea33db8f7d5c3b78241b15469d358cb"
+      "sha256": "a492dd5bfa28f1a15b47f9ee1c188a5eef951944f6bf58b0b3a2ab6b20dc4834"
     },
     {
       "bytes": 6118,
@@ -137,14 +137,14 @@
       "sha256": "15cd38fe275e072ca284bd6d0b1a6b1f73f5cc19a8aa7fcbd91701acbae34cef"
     },
     {
-      "bytes": 7799,
+      "bytes": 9240,
       "path": "skills/astra-api-integration/references/official-contracts.md",
-      "sha256": "9401868bce3160a87ebd133aee2ce97e0255cff5db432f51bc1b258d7d111813"
+      "sha256": "00116bccd3a1555071115a174577e04c55d11d106ee666cb459de9ef089c7240"
     },
     {
-      "bytes": 17614,
+      "bytes": 18797,
       "path": "skills/astra-api-integration/scripts/validate_request.py",
-      "sha256": "3ddf06d902a95be9a8ba0716be748d5f31446fe81af0dce14c71297edd9087b9"
+      "sha256": "f53346cfed77f63c04fcc4137fa2ee7b0ef8fc689cafe439e1f9dcce96d2c003"
     },
     {
       "bytes": 4330,
@@ -152,9 +152,9 @@
       "sha256": "a80e9d2fa46de350191fc8e1c40c01b2bd8a56841106aea1080eabab3372a7fc"
     },
     {
-      "bytes": 4759,
+      "bytes": 5075,
       "path": "skills/context-checkpoint/SKILL.md",
-      "sha256": "efdd20d0952ed6ecf1154c427aa609331e32249706072477fa0057b44d4f351f"
+      "sha256": "a8231648958ff634c2b6db6c02094556c108b4c9acbba9eaaaac64b8ca907886"
     },
     {
       "bytes": 4249,
@@ -237,14 +237,14 @@
       "sha256": "05ee2dbad714508a9dd72f00e731bc7d40d0f2efa95eb4e49c889d0785340f61"
     },
     {
-      "bytes": 13608,
+      "bytes": 18954,
       "path": "tests/test_astra_api.py",
-      "sha256": "74d0c56fae36d2b6859f744a38aeefe98b64d7c048e0e2528e97ce7eacae92f0"
+      "sha256": "88882d8ca27c40ff85eb296bbb14e85a03276a44c17989e60cc31fa98d30b3c8"
     },
     {
-      "bytes": 13467,
+      "bytes": 14970,
       "path": "tests/test_checkpoint.py",
-      "sha256": "98b7736bac902be8433a296d3ec5bdf6a41b00cdd945cb64fe2d632e648c2eb9"
+      "sha256": "ffe53209157609c159e2b92e1afbd77991c162cf3b04bdb91e50127fc4a503bf"
     },
     {
       "bytes": 2929,
@@ -267,6 +267,11 @@
       "sha256": "b6934b275f5357c3aa43aa7a8e792d9e634a0c4f74d5ca7ef27fb72104298398"
     },
     {
+      "bytes": 4192,
+      "path": "tests/test_publication.py",
+      "sha256": "078a0d5527bd2f217c36c36fa1d78b0ad196e35180795e26519fcd0d9f564f0b"
+    },
+    {
       "bytes": 38636,
       "path": "tests/test_runtime.py",
       "sha256": "ed8008ded60b35431e2acb780b935e5a080d5a0a890cdf7d3e480fbd8a7c7612"
@@ -282,11 +287,11 @@
       "sha256": "a120a576a11fda1f551652dc2c38fd58b448cbae17c74ea1e70bf21a71ed8839"
     },
     {
-      "bytes": 10106,
+      "bytes": 31725,
       "path": "tests/test_workspace.py",
-      "sha256": "0b6854713456bd57bf2a4f5cba44c013a7945c2f7f4ad52a43bf81f0fe5c8c77"
+      "sha256": "382b851c361e1b14f56fd3cb86a2fe88eb132dd1ed3784f14773b9fe53c64365"
     }
   ],
   "schema": "codex-nexus/source-inventory/v1",
-  "source_bytes": 565926
+  "source_bytes": 613307
 }

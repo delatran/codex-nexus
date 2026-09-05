@@ -38,6 +38,12 @@ For a durable receipt, add `--output` with a new path outside the source tree.
 The distributable source does not need a receipt directory. Keep private
 reports outside the repository when the result must not be packaged.
 
+New CLI receipts, workspace snapshots, and persisted checkpoints publish complete
+staged JSON only to an absent destination. A file created during staging is a
+conflict and remains unchanged. Publication requires local hard-link support;
+an unavailable exclusive-create operation fails without replacing an owner file.
+The generated source manifest still uses intentional atomic replacement.
+
 ## Installation checks
 
 `setup.py --dry-run` shows the link and configuration plan without mutation.
@@ -57,6 +63,12 @@ an explicit snapshot and an external backup root.
 Windows instruction hardlinks are refreshed only when the private ownership
 receipt matches the installed file's content and identity. Regression tests
 cover source replacement, user edits, invalid receipts, and recovery failures.
+
+Quarantine restoration retains the original backup and reports
+`backup_retained: true` on success. Verify restored source bytes before treating
+recovery as complete. A failed restore can leave partial source copies; the error
+identifies the affected paths and recovery location. Owner changes and backup
+bytes are preserved for reconciliation. No backup cleanup is implied by restoration.
 
 ## What each gate proves
 

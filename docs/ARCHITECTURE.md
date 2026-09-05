@@ -55,6 +55,12 @@ captured pre-change state. Recovery refuses to overwrite a path that changed
 after capture and reports incomplete recovery instead of hiding it. Backups are
 kept in the private Codex Nexus quarantine area selected for that installation.
 
+Quarantine checks each concrete backup destination, not just the backup root,
+and verifies the complete moved file set. Restore copies to absent destinations
+and verifies the final source, retaining the original backup after success.
+Conflicts or changed bytes are reported with the remaining recovery location;
+a partial rollback is never reported as complete.
+
 ## Runtime observations
 
 The runtime inspector reads `.codex/config.toml`, resolves a client in explicit,

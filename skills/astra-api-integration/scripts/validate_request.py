@@ -229,6 +229,20 @@ def validate_response_request(
                     _error(errors, path, "must be an object")
                     continue
                 tool_type = tool.get("type")
+                if "async" in tool and type(tool["async"]) is not bool:
+                    _error(errors, f"{path}.async", "must be a boolean when supplied")
+                callers = tool.get("allowed_callers")
+                if callers is not None:
+                    if not isinstance(callers, list):
+                        _error(errors, f"{path}.allowed_callers", "must be an array or null")
+                    else:
+                        for caller_index, caller in enumerate(callers):
+                            if not isinstance(caller, str) or caller not in ("direct", "programmatic"):
+                                _error(
+                                    errors,
+                                    f"{path}.allowed_callers[{caller_index}]",
+                                    "must be direct or programmatic",
+                                )
                 if tool.get("async") is True:
                     if not isinstance(tool_type, str) or tool_type not in ASYNC_TOOL_TYPES:
                         _error(
@@ -238,7 +252,6 @@ def validate_response_request(
                         )
                     else:
                         async_tools.append(index)
-                    callers = tool.get("allowed_callers")
                     if isinstance(callers, list) and "programmatic" in callers:
                         _error(
                             errors,
@@ -383,9 +396,14 @@ def validate_safety_state(state: Mapping[str, Any]) -> list[dict[str, str]]:
     status = state.get("monitor_state", "clear")
     if not isinstance(status, str) or status not in {"clear", "review_required", "monitor_stopped"}:
         _error(errors, "$.monitor_state", "must be clear, review_required, or monitor_stopped")
+    for field in ("retry", "consequential_action"):
+        if field in state and type(state[field]) is not bool:
+            _error(errors, f"$.{field}", "must be a boolean when supplied")
+    retry_count = state.get("retry_count", 0)
+    if retry_count is not None and (type(retry_count) is not int or retry_count < 0):
+        _error(errors, "$.retry_count", "must be a nonnegative integer or null")
     if isinstance(status, str) and status in {"review_required", "monitor_stopped"}:
-        retry_count = state.get("retry_count", 0)
-        if state.get("retry") is True or retry_count not in (0, None):
+        if state.get("retry") is True or (type(retry_count) is int and retry_count > 0):
             _error(
                 errors,
                 "$.retry",

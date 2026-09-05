@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("receipt must not overwrite its input packet")
             if resolved_output.exists():
                 raise ValueError("receipt output already exists; select a new path")
-            write_json(output, report)
+            write_json(output, report, overwrite=False)
         sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=True) + "\n")
         return 0 if report.get("ok") else 1
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
