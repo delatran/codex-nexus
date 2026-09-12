@@ -1,0 +1,4 @@
+interface:
+  display_name: "Production Verification"
+  short_description: "Verify live behavior and release provenance"
+  default_prompt: "Use $production-verification to verify this live service or release with evidence appropriate to the requested claim."

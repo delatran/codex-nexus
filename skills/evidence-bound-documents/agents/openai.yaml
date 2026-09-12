@@ -1,0 +1,4 @@
+interface:
+  display_name: "Evidence-Bound Documents"
+  short_description: "Preserve document identity, claims, and layout"
+  default_prompt: "Use $evidence-bound-documents to edit this document while preserving its template, citations, and evidence-bound claims."
