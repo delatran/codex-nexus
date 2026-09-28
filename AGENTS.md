@@ -69,7 +69,9 @@ the selected workflow; optional packets, examples, and checklists do not become
 universal prerequisites. Generic coding and simple edits usually need no extra
 skill. User instructions take precedence over skill guidance within the host's
 rules. If a skill would cause a pause, first check its scope and existing
-authorization, and identify the exact applicable instruction if a pause remains.
+authorization. If the constraint still applies, link the exact SKILL.md, quote
+the instruction, and explain the blocked action. Separate explicit requirements
+from your interpretation.
 
 Delegate independent work when it improves correctness or elapsed time. Assign
 clear write ownership, necessary context, a useful result, and an appropriate
@@ -81,8 +83,10 @@ result; worker agreement does not establish correctness.
 
 Use checkpoints when a handoff or context loss threatens continuity. Preserve
 the objective, decisions, relevant source identity, pending work, evidence, and
-next action. Recheck freshness on resume. Memory locates evidence; it does not
-prove current state. Avoid replaying irrelevant transcripts or repeated errors.
+next action. When earlier work matters, use the host's native context retrieval
+if available before repeating broad scans. Recheck affected inputs on resume.
+Memory locates evidence; it does not prove current state. Avoid replaying
+irrelevant transcripts or repeated errors.
 
 ## Evidence and writing
 

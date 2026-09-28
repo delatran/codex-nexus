@@ -24,6 +24,8 @@ _ACTIVE = frozenset({"pending", "in_flight", "running", "review_required", "awai
 _TERMINAL = frozenset({"completed", "failed", "cancelled", "rejected"})
 _STATES = _ACTIVE | _TERMINAL
 _VERIFIER_STATES = frozenset({"observed", "skipped", "failed", "pending"})
+_OPEN_QUESTION_STATES = frozenset({"open", "unresolved", "pending"})
+_QUESTION_STATES = _OPEN_QUESTION_STATES | {"resolved"}
 
 
 class CheckpointError(ValueError):
@@ -81,6 +83,8 @@ def _safe_rel(value: Any) -> str:
         raise CheckpointError(f"path is not normalized: {value!r}")
     if any(part in {".", "..", ""} for part in posix.parts):
         raise CheckpointError(f"path contains an unsafe component: {value!r}")
+    if any(part.endswith((".", " ")) for part in posix.parts):
+        raise CheckpointError(f"path contains a Windows filename alias: {value!r}")
     return value
 
 
@@ -97,18 +101,31 @@ def _inventory(root: Path) -> tuple[Path | None, dict[str, Path], list[dict[str,
     )
 
 
-def _requested_rel(root: Path, raw: os.PathLike[str] | str) -> str:
+def _requested_file(root: Path, raw: os.PathLike[str] | str) -> tuple[str, Path]:
     if not isinstance(raw, (str, os.PathLike)):
         raise CheckpointError("file entry must be path-like")
     requested = Path(raw).expanduser()
-    candidate = requested if requested.is_absolute() else root / requested
-    lexical = candidate.absolute()
+    candidate = requested if requested.is_absolute() else root / _safe_rel(requested.as_posix())
     try:
-        lexical.relative_to(root.absolute())
-        resolved = lexical.resolve(strict=True)
-        return _safe_rel(resolved.relative_to(root.resolve(strict=True)).as_posix())
-    except (OSError, RuntimeError, ValueError) as exc:
-        raise CheckpointError(f"file path leaves root or is missing: {raw!s}") from exc
+        relative = _safe_rel(candidate.absolute().relative_to(root).as_posix())
+    except ValueError as exc:
+        raise CheckpointError(f"file path is unsafe or leaves root: {raw!s}") from exc
+    source_path = _source_file(root, relative)
+    return _safe_rel(source_path.relative_to(root).as_posix()), source_path
+
+
+def _source_file(root: Path, relative: str) -> Path:
+    """Check a declared source path without enumerating unrelated files."""
+    try:
+        candidate = workspace._assert_safe_child(root, root / relative, label="source file")
+        source_parts = candidate.relative_to(root).parts[:-1]
+        if any(part in workspace._EXCLUDED_SOURCE_DIRS for part in source_parts):
+            raise CheckpointError("files must not be in excluded source directories")
+        if workspace._path_kind(candidate) != "file":
+            raise CheckpointError(f"current regular source file required: {relative}")
+        return candidate
+    except (OSError, RuntimeError, ValueError, workspace.WorkspaceError) as exc:
+        raise CheckpointError(str(exc)) from exc
 
 
 def _generation(value: Any, label: str) -> int:
@@ -160,6 +177,8 @@ def _questions(values: Any) -> list[dict[str, Any]]:
         if not _text(item.get("question")):
             raise CheckpointError(f"unresolved_questions[{index}] is invalid")
         item.setdefault("status", "open")
+        if not isinstance(item["status"], str) or item["status"] not in _QUESTION_STATES:
+            raise CheckpointError(f"unresolved_questions[{index}].status is unsupported")
         output.append(item)
     return output
 
@@ -197,9 +216,16 @@ def create_checkpoint(
 ) -> dict[str, Any]:
     """Create a hash-bound packet; this function performs no continuation."""
 
-    root_path, source_map, root_errors = _inventory(Path(root))
-    if root_errors or root_path is None:
-        raise CheckpointError(root_errors[0]["message"])
+    if files is None:
+        root_path, source_map, root_errors = _inventory(Path(root))
+        if root_errors or root_path is None:
+            raise CheckpointError(root_errors[0]["message"])
+    else:
+        try:
+            root_path = workspace._safe_root(root)
+        except (OSError, RuntimeError, ValueError, workspace.WorkspaceError) as exc:
+            raise CheckpointError(str(exc)) from exc
+        source_map = {}
     generation_value = _generation(generation, "generation")
     if isinstance(goal, Mapping):
         statement = goal.get("statement")
@@ -214,12 +240,12 @@ def create_checkpoint(
     if files is not None:
         if isinstance(files, (str, bytes, bytearray)) or not isinstance(files, Sequence):
             raise CheckpointError("files must be a list or None")
-        selected = [_requested_rel(root_path, value) for value in files]
-        if any(value not in source_map for value in selected):
-            raise CheckpointError("files must be current source files")
+        requested = [_requested_file(root_path, value) for value in files]
+        selected = [relative for relative, _ in requested]
+        source_map = dict(requested)
+    selected = sorted(_safe_rel(value) for value in selected)
     if len(selected) != len(set(selected)):
         raise CheckpointError("files contains duplicate paths")
-    selected.sort()
     source_entries = [
         {"path": value, "sha256": workspace.sha256(source_map[value]), "size": source_map[value].stat().st_size}
         for value in selected
@@ -373,8 +399,11 @@ def validate_checkpoint(
     if data.get("authority_granted") is True:
         errors.append(_issue("authority-claim", "authority_granted", "checkpoint cannot grant authority"))
 
-    root_path, source_map, root_errors = _inventory(Path(root))
-    errors.extend(root_errors)
+    try:
+        root_path = workspace._safe_root(root)
+    except (OSError, RuntimeError, ValueError, workspace.WorkspaceError) as exc:
+        root_path = None
+        errors.append(_issue("unsafe-root", "root", str(exc)))
     source = data.get("source")
     entries = source.get("files") if isinstance(source, Mapping) else None
     if not isinstance(source, Mapping):
@@ -411,11 +440,18 @@ def validate_checkpoint(
         if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
             errors.append(_issue("source-hash", f"{label}.sha256", "must be 64 hex characters"))
             continue
-        if root_path is None or relative not in source_map:
-            errors.append(_issue("source-path-not-current", f"{label}.path", "not in safe source inventory"))
+        if root_path is None:
+            errors.append(_issue("source-path-not-current", f"{label}.path", "source root is unsafe"))
             continue
         try:
-            current_digest = workspace.sha256(source_map[relative])
+            source_path = _source_file(root_path, relative)
+            if source_path.relative_to(root_path).as_posix() != relative:
+                raise CheckpointError("source path does not use the current canonical filename")
+        except CheckpointError as exc:
+            errors.append(_issue("source-path-not-current", f"{label}.path", str(exc)))
+            continue
+        try:
+            current_digest = workspace.sha256(source_path)
         except (workspace.WorkspaceError, OSError, ValueError) as exc:
             errors.append(_issue("source-read", f"{label}.path", str(exc)))
             continue
@@ -493,9 +529,9 @@ def validate_checkpoint(
             continue
         if not _text(question):
             errors.append(_issue("question", path, "question must be non-empty"))
-        if not _text(status):
-            errors.append(_issue("question-status", f"{path}.status", "status must be non-empty text"))
-        elif status in {"open", "unresolved", "pending"}:
+        if not isinstance(status, str) or status not in _QUESTION_STATES:
+            errors.append(_issue("question-status", f"{path}.status", f"unsupported status: {status!r}"))
+        elif status in _OPEN_QUESTION_STATES:
             errors.append(_issue("unresolved-question", path, "question blocks safe continuation"))
 
     receipts = data.get("verifier_receipts", data.get("verifiers"))

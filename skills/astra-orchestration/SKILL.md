@@ -1,6 +1,6 @@
 ---
 name: astra-orchestration
-description: Coordinate complex work with independent Astra workstreams, targeted checkpoints, and verified integration.
+description: Coordinate independent workers and dependent tool operations for complex tasks, handoffs, and verified integration.
 ---
 
 # Astra orchestration
@@ -32,21 +32,24 @@ coupled change where another worker cannot add evidence or reduce elapsed time.
    stale or conflicting results, reread changed files, and run the parent
    verifier before closure.
 
-## Initiative and clarification
+## Schedule the ready work
 
-When the user has clearly requested action, continue the authorized local work
-through inspection, implementation, and verification. Make a bounded
-assumption when missing detail does not materially change the target,
-permission, or acceptance condition. Reuse authorization already given for
-the target and effect. Before any remaining approval, prepare the concrete
-change and verifier. A pending question blocks only work that depends on its
-answer; continue independent authorized work.
+Keep the coordinator on a ready dependency while workers run. Batch independent
+searches and reads through the active host's supported parallel tool interface;
+parallel tool calls do not require extra agents. Keep dependent operations,
+coupled writes, and actions awaiting authorization in order. Inspect every
+result, including failures, before using it in later work.
 
-If a task repeatedly pauses on a question that the current sources already
-answer, resolve it from those sources and identify the conflicting guidance.
-Edit that guidance only when instruction maintenance is in scope; otherwise
-report the issue without expanding the task. A local instruction cannot
-override an active host restriction or approval decision.
+Request or extract the fields and source ranges needed for the decision. A
+compact result still needs its source identity, support locator, relevant exit
+status, and unresolved errors. Keep raw logs outside the conversational context
+when they are needed as artifacts. Do not silently omit a failed parallel call
+or remove citation provenance when summarizing large results.
+
+A pending question or delayed tool blocks only its dependents. Continue other
+authorized work, then use the host's completion notifications or bounded waits.
+Avoid polling unchanged state. Before replacing interrupted work, inspect its
+recorded IDs and current state so a retry does not duplicate an active action.
 
 ## Checkpoints
 
@@ -69,6 +72,9 @@ branch results and revalidate shared merge assumptions.
   read-only audits while the coordinator examines the shared contract and its
   tests. The coordinator integrates the findings and owns the coupled edit.
   Add a later independent review only when it can check the completed result.
+- Independent documentation lookups: batch the initial searches, inspect their
+  results, then open the selected sources. A new query that depends on an opened
+  source runs after that observation; worker count is not a progress measure.
 
 ## Verification
 

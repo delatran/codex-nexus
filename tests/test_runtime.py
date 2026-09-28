@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -608,7 +609,121 @@ class RuntimeInspectionTests(unittest.TestCase):
         (root / ".codex" / "config.toml").write_text(
             (ROOT / ".codex" / "config.toml").read_text(encoding="utf-8"), encoding="utf-8"
         )
+        self.enterContext(mock.patch.object(runtime, "_home", return_value=root / "user-config-home"))
         return root
+
+    @staticmethod
+    def _native_result(_command: str, *args: str, **_kwargs: object) -> runtime.CommandResult:
+        if args == ("--version",):
+            return runtime.CommandResult(0, "codex-cli 0.158.0", "")
+        if args == ("debug", "models", "--bundled"):
+            return runtime.CommandResult(0, json.dumps(_catalog()), "")
+        return runtime.CommandResult(0, json.dumps(_features()), "")
+
+    def test_source_provenance_and_installed_drift_are_separate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._root(temp)
+            source = root / ".codex" / "config.toml"
+            user_config = root / "user-config-home" / "config.toml"
+            user_config.parent.mkdir()
+            user_config.write_text(source.read_text().replace('model = "gpt-6-astra"', 'model = "owner-model"', 1) + '\n[private]\ntoken = "PRIVATE-TOKEN"\n')
+            selected = runtime.Runtime(root / "codex", "explicit", "codex", False, False, False)
+            before = user_config.read_bytes()
+            with mock.patch.object(runtime, "_run", side_effect=self._native_result):
+                result = runtime.inspect_runtime(root, selected)
+            self.assertEqual(user_config.read_bytes(), before)
+            self.assertEqual(result["source_sha256"], hashlib.sha256(source.read_bytes()).hexdigest())
+        self.assertTrue(result["ok"], result["errors"])
+        self.assertEqual(result["observation_scope"], "source_configuration_compatibility")
+        self.assertFalse(result["effective_session_verified"])
+        self.assertEqual(result["installed_configuration"]["status"], "drift")
+        self.assertEqual(result["installed_configuration"]["drift_keys"], ["model"])
+        self.assertNotIn("PRIVATE-TOKEN", json.dumps(result))
+        self.assertNotIn("owner-model", json.dumps(result))
+        self.assertNotIn(str(root), json.dumps(result))
+        self.assertTrue(any(item["check"] == "installed-configuration" for item in result["warnings"]))
+
+    def test_missing_and_invalid_user_config_are_advisory(self) -> None:
+        for contents, expected in ((None, "missing"), ('secret = "PRIVATE-TOKEN', "invalid")):
+            with self.subTest(status=expected), tempfile.TemporaryDirectory() as temp:
+                root = self._root(temp)
+                if contents is not None:
+                    user_config = root / "user-config-home" / "config.toml"
+                    user_config.parent.mkdir()
+                    user_config.write_text(contents)
+                selected = runtime.Runtime(root / "codex", "explicit", "codex", False, False, False)
+                with mock.patch.object(runtime, "_run", side_effect=self._native_result):
+                    result = runtime.inspect_runtime(root, selected)
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["installed_configuration"]["status"], expected)
+                self.assertNotIn("PRIVATE-TOKEN", json.dumps(result))
+
+    def test_matching_user_configuration_is_observation_not_session_proof(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._root(temp)
+            user_config = root / "user-config-home" / "config.toml"
+            user_config.parent.mkdir()
+            user_config.write_bytes((root / ".codex" / "config.toml").read_bytes())
+            selected = runtime.Runtime(root / "codex", "explicit", "codex", False, False, False)
+            with mock.patch.object(runtime, "_run", side_effect=self._native_result):
+                result = runtime.inspect_runtime(root, selected)
+        self.assertEqual(result["installed_configuration"]["status"], "matches_source")
+        self.assertFalse(result["installed_configuration"]["effective_session_verified"])
+
+    def test_source_change_during_probe_invalidates_compatibility(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._root(temp)
+            selected = runtime.Runtime(root / "codex", "explicit", "codex", False, False, False)
+            def run(command: str, *args: str, **kwargs: object) -> runtime.CommandResult:
+                if args == ("--version",):
+                    source = root / ".codex" / "config.toml"
+                    source.write_text(source.read_text() + "\n# changed during inspection\n")
+                return self._native_result(command, *args, **kwargs)
+            with mock.patch.object(runtime, "_run", side_effect=run):
+                result = runtime.inspect_runtime(root, selected)
+        self.assertFalse(result["ok"])
+        self.assertIn("configuration-freshness", {item["check"] for item in result["errors"]})
+
+    def test_offline_fixture_never_reads_installed_configuration(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._root(temp)
+            with (
+                mock.patch.object(runtime, "_installed_configuration", side_effect=AssertionError("no live configuration read")),
+                mock.patch.object(runtime, "resolve_runtime", side_effect=AssertionError("no live client selection")),
+            ):
+                result = runtime.inspect_runtime(root, {"catalog": _catalog(), "features": _features()})
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["installed_configuration"]["status"], "not_observed")
+
+    def test_requested_discovery_failure_preserves_compatibility_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._root(temp)
+            selected = runtime.Runtime(root / "codex", "explicit", "codex", False, False, False)
+            with (
+                mock.patch.object(runtime, "_run", side_effect=self._native_result),
+                mock.patch("nexus.discovery.inspect_discovery", return_value={"ok": False}) as discovery,
+            ):
+                result = runtime.inspect_runtime(root, selected, discovery=True)
+            discovery.assert_called_once_with(root, selected)
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["compatibility_ok"])
+
+    def test_configuration_change_during_discovery_invalidates_final_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = self._root(temp)
+            selected = runtime.Runtime(root / "codex", "explicit", "codex", False, False, False)
+            def discover(*_args: object) -> dict:
+                source = root / ".codex" / "config.toml"
+                source.write_text(source.read_text() + "\n# changed during discovery\n")
+                return {"ok": True}
+            with (
+                mock.patch.object(runtime, "_run", side_effect=self._native_result),
+                mock.patch("nexus.discovery.inspect_discovery", side_effect=discover),
+            ):
+                result = runtime.inspect_runtime(root, selected, discovery=True)
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["compatibility_ok"])
+        self.assertTrue(result["discovery"]["ok"])
 
     def test_invalid_source_stops_before_cli_probe(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

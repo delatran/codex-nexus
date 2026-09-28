@@ -126,6 +126,7 @@ Use the runtime command when the source configuration or client changes:
 ```sh
 python -B -m nexus runtime
 python -B -m nexus runtime --codex codex
+python -B -m nexus runtime --discovery
 ```
 
 Client selection is explicit override, desktop-managed executable, then PATH.
@@ -135,6 +136,13 @@ native `-c` overrides to bounded local feature probes. The feature check
 therefore does not silently depend on an existing installation or project
 trust. Version labels identify the client; capability observations determine
 compatibility.
+
+The receipt identifies the source configuration by SHA-256 and labels its
+observation scope. It also reports whether the installed user settings match
+the owned source keys, using key names without exposing private values. Drift
+is a separate observation: source compatibility can pass while installation
+health fails. The inspector does not repair drift or establish the effective
+settings of an existing task.
 
 A pass means the source satisfies the package contract and the selected local
 client advertises the requested model, effort levels, and feature values.
@@ -148,6 +156,26 @@ server availability, a full model task, or every dependent integration.
 `setup.py --health` separately checks installed links and owned settings against
 the current source. Report the client and source identity used for an actual
 run instead of carrying forward a historical pass as current evidence.
+
+### Native prompt discovery
+
+`runtime --discovery` additionally invokes the selected client's
+[`debug prompt-input`](https://learn.chatgpt.com/docs/developer-commands)
+command. It inspects a fresh prompt assembled for this repository without
+generating a model response. The report checks the current instruction content
+and repository skill catalog identities; it does not include the private
+prompt, unrelated skills, or user instruction contents.
+
+The probe is opt-in because startup can read private local context. Keep raw
+native prompt dumps out of published receipts. An unsupported command,
+incomplete output, missing instruction content, or missing skill identity
+must remain a discovery failure, not be replaced by a filesystem-only pass.
+
+Workspace instructions can be visible even when the global managed link is
+stale or custom. Catalog discovery also differs from loading a skill's full
+instructions. Use setup health for installation state, discovery for native
+prompt construction, and a representative task for actual skill use. None of
+these observations changes an already-running chat.
 
 The [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference),
 [subagent guidance](https://learn.chatgpt.com/docs/agent-configuration/subagents),

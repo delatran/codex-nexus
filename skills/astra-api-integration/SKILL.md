@@ -40,19 +40,23 @@ steering, and local state envelopes are not prerequisites for a simple request.
   `strict: true` when exact schema adherence is required. Separate API validity
   from the application's chosen strictness and evidence conventions.
 - **Async tools:** Preserve the original `call_id`, execute the tool in the
-  application, and return its output in a later Responses request. Use direct
-  calls. In multi-agent mode, set `parallel_tool_calls` explicitly to `false`
-  with async tools to satisfy their documented incompatibility. Keep enough
-  pending-call state to reconcile results with the current task; reuse existing
-  IDs/status tracking and add generation or hashes only when needed. Continue
-  independent work while a tool runs and wait when a result is needed.
+  application, and return its output using the latest response ID for the
+  continuation. Resupply the needed tools and instructions. Dispatch complete
+  call items and track pending work across turns. A synchronous application
+  wait tool can join selected jobs; return their results before its status.
+  Use direct calls. When `multi_agent.enabled` is true, set
+  `parallel_tool_calls` explicitly to `false` with async tools. Continue
+  independent work and wait before a dependent action.
 - **Steering:** Send `response.steer` on the same WebSocket with the current
   `previous_response_id`. Its only fields are `type`, `previous_response_id`,
   and `input`; input is a string or a nonempty array of user messages with
-  supported content. Track accepted/failed submissions by steer ID. Acceptance
-  queues input; keep reading the continuation and return required tool results
-  on that connection. Reconcile pending input after disconnect before replay.
-  Steering does not undo output or cancel tools that already started.
+  supported content. Use single-agent responses without conversation binding
+  or automatic compaction. Acceptance queues input; the successor's
+  `response.created` commits it. For `response.steer.pending`, resolve
+  `required_input` with saved results and send one explicit continuation per
+  parent on its WebSocket lane. Resupply needed settings; never resend queued
+  input or rerun completed tools. Reconcile disconnects before replay.
+  Steering does not undo output or cancel started tools.
 - **Provider stop:** Recognize `misalignment_policy_violation` and stop
   dispatching actions for the affected conversation. Preserve redacted records
   for operator review and reconcile actions already started. Do not retry or
@@ -77,6 +81,11 @@ For changed request builders or tool loops, run relevant success and failure
 cases using existing tests where they cover the behavior. Resolve `skill_root`
 from this loaded `SKILL.md`; its `scripts/validate_request.py` can check partial
 request, steering, and local safety-state shapes without network access.
+
+When a request and `--steering` are supplied together, the request must describe
+the steering target's settings. `--multi-agent`, `--pro`,
+`--automatic-compaction`, and `--automatic-truncation` can supply known context
+outside that JSON. These are validator flags, not provider request fields.
 
 The helper is a partial validator, not the complete provider schema. A passing
 offline check proves only its checked shape and local state conventions.

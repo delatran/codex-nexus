@@ -25,6 +25,8 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("--runtime", action="store_true", help="include local Codex probes, without a model request")
         if name in {"verify", "runtime"}:
             child.add_argument("--codex", help="explicit Codex executable; invalid selection fails without fallback")
+        if name == "runtime":
+            child.add_argument("--discovery", action="store_true", help="inspect native instruction and skill discovery without retaining the prompt")
         if name == "inventory":
             child.add_argument("--write", action="store_true", help="regenerate SOURCE_MANIFEST.json")
         if name in {"evidence", "checkpoint"}:
@@ -43,7 +45,7 @@ def main(argv: list[str] | None = None) -> int:
             report = verify(root, runtime=args.runtime, codex=args.codex)
         elif args.command == "runtime":
             from .runtime import inspect_runtime
-            report = inspect_runtime(root, codex=args.codex)
+            report = inspect_runtime(root, codex=args.codex, discovery=args.discovery)
         elif args.command == "inventory":
             from .verify import inventory, update_inventory
             data = update_inventory(root) if args.write else inventory(root)
@@ -74,7 +76,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(json.dumps(report, indent=2, ensure_ascii=True) + "\n")
         return 0 if report.get("ok") else 1
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
-        sys.stdout.write(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=True) + "\n")
+        error = {"ok": False, "error": str(exc)}
+        if args.command == "runtime" and args.discovery:
+            error = {
+                "ok": False,
+                "check": "discovery-command",
+                "error": "native discovery or receipt output could not be completed",
+                "error_type": type(exc).__name__,
+            }
+        sys.stdout.write(json.dumps(error, ensure_ascii=True) + "\n")
         return 2
 
 

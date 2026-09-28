@@ -41,6 +41,30 @@ def _nonempty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _multi_agent_enabled(
+    request: Mapping[str, Any],
+    errors: list[dict[str, str]],
+) -> bool:
+    settings = request.get("multi_agent")
+    if settings is None:
+        return False
+    if not isinstance(settings, Mapping):
+        _error(errors, "$.multi_agent", "must be an object or null")
+        return False
+    enabled = settings.get("enabled")
+    if type(enabled) is not bool:
+        _error(errors, "$.multi_agent.enabled", "must be a boolean")
+    return enabled is True
+
+
+def _uses_automatic_compaction(request: Mapping[str, Any]) -> bool:
+    settings = request.get("context_management")
+    return isinstance(settings, list) and any(
+        isinstance(item, Mapping) and item.get("type") == "compaction"
+        for item in settings
+    )
+
+
 def _validate_schema_format(value: object, errors: list[dict[str, str]]) -> None:
     if not isinstance(value, Mapping):
         _error(errors, "$.text.format", "must be an object")
@@ -161,8 +185,13 @@ def validate_response_request(
     if not isinstance(request, Mapping):
         return [{"path": "$", "message": "request must be a JSON object"}]
 
+    request_is_multi_agent = _multi_agent_enabled(request, errors) or multi_agent
     if request.get("model") != MODEL:
         _error(errors, "$.model", "must be gpt-6-astra")
+
+    parallel = request.get("parallel_tool_calls")
+    if parallel is not None and type(parallel) is not bool:
+        _error(errors, "$.parallel_tool_calls", "must be a boolean or null")
 
     for field, message in UNSUPPORTED_REQUEST_FIELDS.items():
         if field in request:
@@ -194,6 +223,12 @@ def validate_response_request(
             _error(errors, "$.reasoning", "must be an object")
         else:
             request_is_pro = request_is_pro or reasoning.get("mode") == "pro"
+            if request_is_multi_agent and reasoning.get("summary") is not None:
+                _error(
+                    errors,
+                    "$.reasoning.summary",
+                    "is not supported in multi-agent mode",
+                )
             if "effort" in reasoning:
                 effort = reasoning.get("effort")
                 if not isinstance(effort, str) or effort not in SUPPORTED_EFFORTS:
@@ -202,6 +237,9 @@ def validate_response_request(
                         "$.reasoning.effort",
                         "must be one of low, medium, high, xhigh, or max",
                     )
+
+    if request_is_multi_agent and request.get("max_tool_calls") is not None:
+        _error(errors, "$.max_tool_calls", "is not supported in multi-agent mode")
 
     if "response_format" in request:
         _error(
@@ -229,6 +267,8 @@ def validate_response_request(
                     _error(errors, path, "must be an object")
                     continue
                 tool_type = tool.get("type")
+                if "async" in tool and type(tool["async"]) is not bool:
+                    _error(errors, f"{path}.async", "must be a boolean when supplied")
                 if tool.get("async") is True:
                     if not isinstance(tool_type, str) or tool_type not in ASYNC_TOOL_TYPES:
                         _error(
@@ -248,29 +288,33 @@ def validate_response_request(
                 if tool_type == "function" and not _nonempty_string(tool.get("name")):
                     _error(errors, f"{path}.name", "is required for a function tool")
 
-    if multi_agent and async_tools and request.get("parallel_tool_calls") is not False:
+    if request_is_multi_agent and async_tools and parallel is not False:
         _error(
             errors,
             "$.parallel_tool_calls",
             "must be explicitly false with async tools in multi-agent mode; the provider guide forbids combining them and does not define an omitted default",
         )
 
-    request_uses_automatic_compaction = automatic_compaction
-    context_management = request.get("context_management")
-    if isinstance(context_management, list):
-        request_uses_automatic_compaction = request_uses_automatic_compaction or any(
-            isinstance(item, Mapping) and item.get("type") == "compaction"
-            for item in context_management
-        )
+    request_uses_automatic_compaction = automatic_compaction or _uses_automatic_compaction(request)
     request_uses_automatic_truncation = automatic_truncation or request.get("truncation") == "auto"
     _validate_configuration_updates(
         request.get("input"),
         errors,
-        multi_agent=multi_agent,
+        multi_agent=request_is_multi_agent,
         pro=request_is_pro,
         automatic_compaction=request_uses_automatic_compaction,
         automatic_truncation=request_uses_automatic_truncation,
     )
+
+    input_value = request.get("input")
+    if isinstance(input_value, list):
+        for index, item in enumerate(input_value):
+            if (
+                isinstance(item, Mapping)
+                and item.get("type") == "compaction_trigger"
+                and index != len(input_value) - 1
+            ):
+                _error(errors, f"$.input[{index}]", "compaction_trigger must be the final input item")
 
     return errors
 
@@ -342,12 +386,34 @@ def _validate_steering_message(
         _validate_steering_content(message.get("content"), f"{path}.content", errors)
 
 
-def validate_steering_event(event: Mapping[str, Any]) -> list[dict[str, str]]:
-    """Validate the documented partial shape of one response.steer event."""
+def validate_steering_event(
+    event: Mapping[str, Any],
+    *,
+    request: Mapping[str, Any] | None = None,
+    multi_agent: bool = False,
+    automatic_compaction: bool = False,
+) -> list[dict[str, str]]:
+    """Check an event and, when supplied, the target response's request settings.
+
+    This does not establish connection ownership or a successful continuation.
+    Request-field errors refer to the supplied target request, not event fields.
+    """
 
     errors: list[dict[str, str]] = []
     if not isinstance(event, Mapping):
         return [{"path": "$", "message": "steering event must be a JSON object"}]
+    if request is not None:
+        if not isinstance(request, Mapping):
+            _error(errors, "$.request", "target request must be an object")
+        else:
+            multi_agent = _multi_agent_enabled(request, errors) or multi_agent
+            automatic_compaction = _uses_automatic_compaction(request) or automatic_compaction
+            if request.get("conversation") is not None:
+                _error(errors, "$.conversation", "conversation-bound responses do not support steering")
+    if multi_agent:
+        _error(errors, "$.multi_agent", "steering is supported only in single-agent mode")
+    if automatic_compaction:
+        _error(errors, "$.context_management", "automatic compaction is incompatible with steering")
     for key in event:
         if not isinstance(key, str) or key not in STEERING_EVENT_KEYS:
             _error(errors, f"$.{key}", "is not supported on response.steer")
@@ -426,6 +492,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("request", type=Path, nargs="?")
     parser.add_argument("--multi-agent", action="store_true")
+    parser.add_argument("--pro", action="store_true")
+    parser.add_argument("--automatic-compaction", action="store_true")
+    parser.add_argument("--automatic-truncation", action="store_true")
     parser.add_argument("--steering", type=Path)
     parser.add_argument("--safety-state", type=Path)
     args = parser.parse_args(argv)
@@ -436,11 +505,24 @@ def main(argv: list[str] | None = None) -> int:
     errors: list[dict[str, str]] = []
     checks: list[str] = []
     try:
+        request = None
         if args.request is not None:
-            errors.extend(validate_response_request(_read_json(args.request), multi_agent=args.multi_agent))
+            request = _read_json(args.request)
+            errors.extend(validate_response_request(
+                request,
+                multi_agent=args.multi_agent,
+                pro=args.pro,
+                automatic_compaction=args.automatic_compaction,
+                automatic_truncation=args.automatic_truncation,
+            ))
             checks.append("responses_request")
         if args.steering is not None:
-            errors.extend(validate_steering_event(_read_json(args.steering)))
+            errors.extend(validate_steering_event(
+                _read_json(args.steering),
+                request=request,
+                multi_agent=args.multi_agent,
+                automatic_compaction=args.automatic_compaction,
+            ))
             checks.append("steering_event")
         if args.safety_state is not None:
             errors.extend(validate_safety_state(_read_json(args.safety_state)))

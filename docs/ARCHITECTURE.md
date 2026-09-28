@@ -13,6 +13,7 @@ conversation state, compaction, and account limits.
 | `.codex/config.toml` | Model, reasoning, capability, app, and execution settings owned by this project. |
 | `skills/*/SKILL.md` | Discriminating triggers and procedures for domain work. |
 | `nexus/runtime.py` | Local Codex selection and capability observations against the source TOML. |
+| `nexus/discovery.py` | Optional native instruction and skill discovery with private prompt contents omitted. |
 | `nexus/install.py` | Managed rule and skill links, conflict checks, and link recovery. |
 | `nexus/config_install.py` | Native Codex configuration merge, backups, publication, and rollback. |
 | `nexus/workspace.py` | Root safety, redirect checks, hashing, and bounded source operations. |
@@ -69,6 +70,13 @@ claim that a feature advertisement proves account access or task quality.
 Only the owner's explicit source feature selection is required. Discovering a
 new experiment cannot add it to the source or restore a removed selection.
 
+Runtime observations identify the source configuration by hash and distinguish
+its compatibility from installed user settings. An optional discovery probe
+reads native prompt input, checks source instruction and skill identities, and
+returns only the relevant observations. It does not retain the prompt or
+infer that catalog exposure means a skill ran. Source changes during either
+probe invalidate the affected observation.
+
 ## Verification and packaging
 
 The verifier has four local gates: source and skill structure, generated
@@ -82,6 +90,11 @@ Evidence and checkpoint helpers validate declared relationships and freshness.
 They cannot grant authority, resume a worker, or turn a recorded command into a
 proof of completion. Manual review remains responsible for semantic correctness
 and the actual task outcome.
+
+An explicit checkpoint file selection checks those regular files and their
+path components without scanning unrelated directories. Full-source creation
+and package inventory retain their complete-tree checks. The packet describes
+its chosen sources, not the absence of changes elsewhere in a workspace.
 
 ## Deliberate boundaries
 

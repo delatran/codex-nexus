@@ -16,11 +16,13 @@ does not need this workflow.
   from the request and state only assumptions that matter.
 - Choose sources by claim. Use current local evidence for local state, primary
   records or direct measurements for substantive findings, and strong secondary
-  sources for context and discovery. Read the supporting source; a search
-  snippet or a citation copied from another author is only a lead.
+  sources for context and discovery. Search locates candidate evidence; open
+  or fetch the supporting source before relying on it. A snippet or a citation
+  copied from another author is only a lead.
 - Retain enough source identity and a support locator to recheck each material
-  claim. Distinguish what a source reports from your inference, and identify
-  stale, inaccessible, or incomplete evidence when it affects the conclusion.
+  claim, including after filtering tool output or merging worker summaries.
+  Distinguish what a source reports from your inference, and identify stale,
+  inaccessible, or incomplete evidence when it affects the conclusion.
 - Investigate a rival explanation, negative case, or contradiction when it
   could change the answer. Reconcile differences in definitions, populations,
   dates, and methods before treating sources as contradictory or independent.
@@ -34,9 +36,9 @@ does not need this workflow.
   change the answer or confidence, rather than merely increase source counts.
 
 Read [research protocol](references/research-protocol.md) for systematic
-coverage, disputed evidence, or causal and economic conclusions. Apply the
-relevant sections; a standalone claim ledger or source matrix is needed only
-when it improves the requested artifact, review, or handoff.
+coverage, retrieval recovery, disputed evidence, or causal and economic
+conclusions. Apply the relevant sections; a standalone claim ledger or source
+matrix is needed only when it improves the requested artifact, review, or handoff.
 
 ## Optional packet audit
 

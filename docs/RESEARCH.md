@@ -2,23 +2,53 @@
 
 [Overview](../README.md) · [Runtime](ASTRA.md) · [Evaluation](EVALUATION.md)
 
-**Evidence reviewed through September 5, 2026.**
+**Astra and Codex contracts checked on September 28, 2026.**
 
 Codex Nexus draws on official Codex contracts, OpenAI employee guidance, and
 primary research on instructions, context, feedback, and collaboration. Each
 source below connects a design decision to the evidence and its limits.
 These references support maintenance decisions; they are loaded only when
-relevant to a task.
+relevant to a task. The study summaries below retain the September 5 review;
+they were not rerun or converted into Astra performance measurements.
 
-## Astra launch and employee guidance
+## Current implementation decisions
+
+The current review searched official documentation and fetched the supporting
+pages, including their Markdown bodies where the web renderer could not expose
+the relevant section. Search snippets were used for discovery only. The table
+connects each selected change to its source and its observable local check.
+
+| Source and support locator | Decision | Check and limit |
+| --- | --- | --- |
+| [Rethinking skills and prompts for GPT-6 Astra](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra), September 11, sections Better skills, Up-to-date AGENTS.md, and Persistence | Keep task-specific procedures and avoid mandatory whole-repository context gathering. | Review skill triggers and source changes. This is instruction design, not a measured success-rate gain. |
+| [Astra model guidance](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra), Prompting best practices | Preserve authorized follow-through, selective delegation, and proportional testing; identify and quote instructions that cause a pause. | Check actual task completion and negative cases; a longer prompt or higher effort is not the acceptance criterion. |
+| [Codex developer commands](https://learn.chatgpt.com/docs/developer-commands), codex debug prompt-input | Add an explicit native prompt-discovery probe alongside source-configuration compatibility. | Inspect generated prompt input without generating a model response. Return discovery results without exporting private prompt contents. |
+| [Programmatic Tool Calling](https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling), Choose when to use and Design tools for programs | Batch independent reads and reduce large structured outputs when the active host supports it. | Preserve failures, source locators, and native evidence. Adaptive search and dependent actions still require intermediate judgment. |
+| [Responses Multi-agent](https://developers.openai.com/api/docs/guides/responses-multi-agent), Limitations, and [async tool calling](https://developers.openai.com/api/docs/guides/async-tool-calling), Compatibility | Infer multi-agent mode from the actual request and reject incompatible combinations in the offline API validator. | Exercise real payload shapes in positive and negative fixtures. No provider request is made by the validator. |
+| [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents), Why subagent workflows help | Distinguish shared reads and independent review from conflicting writes. | Evaluate write ownership, duplicate work, evidence added, and integration results; overlapping read scope alone is not a failure. |
+
+Selected-file checkpoint validation follows the same scope principle. Its local
+contract binds and checks the selected files and their path components without
+enumerating unrelated directories. Selecting all source still uses the complete
+inventory. Regression fixtures check unrelated links, selected redirects, stale
+hashes, and invalid state. This is a repository implementation decision, not an
+OpenAI checkpoint format or a claim about the model's internal memory.
+
+The review does not justify replacing the owner's model, effort, or selected
+features. Codex host configuration and Responses API fields are separate
+contracts. In particular, a host-advertised effort does not automatically become
+a valid API reasoning value. The API validator's detailed sources remain in
+[its owning reference](../skills/astra-api-integration/references/official-contracts.md).
+
+## Earlier design context
 
 The [Astra launch article](https://openai.com/index/gpt-6-astra/) and
 [OpenAI release notes](https://openai.com/products/release-notes/) establish
-the September 3, 2026 launch. This review includes relevant guidance published
-through September 5. Rollout announcements describe availability over time;
-they do not establish an individual account's current entitlement.
+the September 3, 2026 launch in the earlier review. Rollout announcements
+describe availability over time; they do not establish an individual account's
+current entitlement.
 
-[Eric Provencher's article](https://x.com/pvncher/status/2095991462416490862)
+[Eric Provencher's official article](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)
 recommends focused skill triggers, progressive disclosure, purposeful reading
 and testing, and explicit completion boundaries. Codex Nexus applies this
 guidance through short skill entrypoints, conditional references, and

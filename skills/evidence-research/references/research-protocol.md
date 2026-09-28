@@ -22,6 +22,33 @@ reporting the same experiment or dataset do not establish independent
 corroboration. When research lines are split by region, period, population, or
 hypothesis, use compatible claim definitions and inclusion rules before merging.
 
+## Retrieval and follow-up
+
+Batch independent searches or source reads through the host's supported tools.
+Inspect their results before choosing dependent queries, following citations,
+or selecting the next document. Use live retrieval when the claim depends on
+current state; record the observation date separately from the publication or
+event date. A search index's freshness label does not date the underlying event.
+
+Open or fetch the exact source that supports a material claim. For a long page,
+locate and read the relevant section with enough surrounding context to check
+qualifiers. Prefer a supported text, HTML, PDF, or Markdown representation when
+one format fails. A navigation shell, challenge page, empty body, or truncated
+response does not establish that the document was read. Respect an actual
+access denial; an alternate format is for retrieval failure, not bypassing a
+restriction.
+
+When a lookup is empty or unexpectedly narrow, change the query, source family,
+or supported retrieval method if the gap could affect the conclusion. Report
+the remaining coverage limit after those targeted attempts. Repeating an
+unchanged query is not new evidence, and a retrieval failure is not evidence
+that the underlying fact or source does not exist.
+
+Keep the source URL or local path, version or date, support locator, and any
+uncertainty attached when extracting fields, shortening output, or handing off
+findings. Cite that inspected source near the claim. A worker summary without
+recoverable support is a lead that still needs verification.
+
 ## Claim support and disagreement
 
 For a material claim, retain the source identity or version and the passage,

@@ -17,6 +17,7 @@ Match the check to the changed surface:
 | Small skill prose or reference edit | Validate frontmatter, local links, and the updated inventory. |
 | Coordinated skills, catalog, Python, or packaging change | Run focused checks during editing, then the integrated verifier. |
 | Runtime configuration or discovery change | Add `--runtime` to integrated verification; inspect the current runtime output. |
+| Native instruction or skill discovery behavior | Run `runtime --discovery` from the actual linked source checkout; keep its sanitized receipt, not the raw private prompt. |
 | Installer or managed installation change | Run the relevant installer tests and read-only health check; inspect the actual final paths. |
 
 Derived surfaces must be regenerated, not hand-edited. Resolve the loaded
@@ -45,3 +46,9 @@ against fixtures. Do not use a report, catalog, or configured link as proof
 of live behavior without a runtime observation. Preserve existing authorization
 for the named installation target; prepare all local changes and verification
 before any remaining approval for an external effect.
+
+Source compatibility, installed configuration, and native discovery are
+different observations. A source projection can pass while installed settings
+drift. A workspace instruction block can be visible while the global link is
+custom. Diagnose the affected surface without silently replacing personal
+settings or using a filesystem check as a substitute for native discovery.

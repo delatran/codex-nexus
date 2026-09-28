@@ -124,6 +124,18 @@ Add `--runtime` to the verification command when changing Codex settings,
 runtime discovery, or feature interpretation. It adds local Codex probes to
 the same verification run and does not generate a model response.
 
+To diagnose whether a fresh local Codex prompt exposes the current instructions
+and skill catalog, run:
+
+```sh
+python -B -m nexus runtime --discovery
+```
+
+This optional check inspects native prompt input and returns a compact receipt
+without publishing the prompt. Source compatibility, installed settings, and
+prompt discovery are reported separately. A visible skill entry establishes
+discovery, not that a model loaded its body or used it successfully.
+
 To export a source archive, run
 `python -B -m nexus package --output ../codex-nexus-source.zip`.
 The destination must be new and outside the repository. Save verification

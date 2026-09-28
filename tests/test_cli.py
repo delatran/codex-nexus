@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from nexus.__main__ import main
 
@@ -34,6 +35,34 @@ class CliTests(unittest.TestCase):
         self.assertEqual(status, 2)
         self.assertFalse(result["ok"])
         self.assertEqual(target.read_text(), "Owner source")
+
+    def test_runtime_discovery_is_explicit(self):
+        for extra, enabled in (([], False), (["--discovery"], True)):
+            with self.subTest(discovery=enabled), mock.patch("nexus.runtime.inspect_runtime", return_value={"ok": True}) as inspect:
+                status, _ = self.run_command("runtime", "--root", str(self.root), "--codex", "selected-client", *extra)
+                self.assertEqual(status, 0)
+                inspect.assert_called_once_with(self.root, codex="selected-client", discovery=enabled)
+
+    def test_failed_discovery_returns_failure_status(self):
+        with mock.patch("nexus.runtime.inspect_runtime", return_value={"ok": False, "compatibility_ok": True, "discovery": {"ok": False}}):
+            status, report = self.run_command("runtime", "--root", str(self.root), "--discovery")
+        self.assertEqual(status, 1)
+        self.assertTrue(report["compatibility_ok"])
+
+    def test_discovery_invalid_root_omits_private_path(self):
+        status, report = self.run_command("runtime", "--discovery", "--root", str(self.root / "PRIVATE-MISSING-ROOT"))
+        self.assertEqual(status, 2)
+        self.assertNotIn("PRIVATE-MISSING-ROOT", json.dumps(report))
+        self.assertNotIn(str(self.root), json.dumps(report))
+
+    def test_discovery_output_error_omits_private_path(self):
+        blocked_parent = self.root / "artifacts"
+        blocked_parent.write_text("Owner file, not a directory")
+        with mock.patch("nexus.runtime.inspect_runtime", return_value={"ok": True}):
+            status, report = self.run_command("runtime", "--discovery", "--root", str(self.root), "--output", str(blocked_parent / "PRIVATE-OUTPUT"))
+        self.assertEqual(status, 2)
+        self.assertNotIn("PRIVATE-OUTPUT", json.dumps(report))
+        self.assertNotIn(str(self.root), json.dumps(report))
 
     def test_receipt_cannot_replace_external_input(self):
         source_root = self.root / "source"

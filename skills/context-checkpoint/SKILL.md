@@ -33,8 +33,19 @@ changed inputs; preserve observations that remain applicable.
 Use `nexus.checkpoint.create_checkpoint` when machine-checkable source identity
 or pending-work correlation is useful. The helper requires a goal, done
 condition, next action, and source selection. Pass an explicit file list for
-a large repository. It records selected files with SHA-256 hashes and uses a
-non-negative generation number, defaulting to zero. Track incompatible goal
+a large repository. Explicit creation and packet validation inspect only the
+selected files and their path components, without enumerating unrelated trees.
+Selected files must be regular files inside the root, with no symlink or
+junction in the root's ancestors or selected path. The source directories
+`.git`, `artifacts`, `__pycache__`, and `.pytest_cache` remain excluded at every
+depth. Passing `files=None` creates a complete source inventory and checks all
+paths visited by that inventory. A selective packet does not attest to
+unselected files or detect new files outside its selection.
+Packet paths use canonical relative POSIX filenames; path traversal,
+drive-relative paths, and trailing-dot or trailing-space aliases are invalid.
+
+Packets record selected files with SHA-256 hashes and use a non-negative
+generation number, defaulting to zero. Track incompatible goal
 revisions with that number; it is not a requirement to create a separate
 host goal. Pending tools and delegations must belong to the packet's generation.
 
@@ -49,6 +60,11 @@ structured packet. It checks schema and version, timestamp freshness, safe
 relative paths, current hashes, generation correlation, duplicate IDs, unresolved
 questions, and verifier states. It is a read-only check: it reports stale and
 pending blockers without executing a tool or resuming work.
+
+Question statuses are `open`, `unresolved`, `pending`, or `resolved`; omitted
+statuses default to `open`. The first three retain the unresolved blocker.
+Use `resolved` only after recording the answer or decision in the handoff.
+Unknown statuses are invalid, so a misspelling cannot clear an open question.
 
 The age window is configurable with max_age_seconds; use None only when the
 caller has another explicit freshness bound. Hash and generation checks still

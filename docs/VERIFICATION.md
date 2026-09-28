@@ -33,6 +33,11 @@ The source's declared feature values define the check. Additional client
 features remain observations; the verifier does not require every available
 experiment to be selected or enabled.
 
+The runtime receipt binds its source configuration by hash and reports
+installed-setting drift separately from source compatibility. Drift does not
+make an otherwise supported source configuration unsupported, and a compatible
+configuration does not prove that it is installed.
+
 Add `--runtime` when the change affects Codex configuration or compatibility.
 For a durable receipt, add `--output` with a new path outside the source tree.
 The distributable source does not need a receipt directory. Keep private
@@ -47,6 +52,14 @@ backs up replaced configuration bytes, and performs a final health check.
 The skill link is `~/.agents/skills`; personal and system skills under
 `~/.codex/skills` remain outside the managed catalog. Health confirms filesystem
 state, while a new task's available skill list confirms host discovery.
+
+`python -B -m nexus runtime --discovery` adds an explicit native prompt-input
+probe. It checks the current instruction content and source skill identities
+without generating a model response. Its returned receipt omits raw prompt
+contents and private paths. This check can detect missing or shadowed catalog
+entries that a healthy filesystem link cannot establish. It does not prove
+that a model subsequently activated a skill, and it does not replace setup
+health or a task-level outcome check.
 
 If a link operation or final health check fails, setup attempts to restore the
 captured configuration and links. Recovery is conservative: it refuses to
@@ -66,6 +79,7 @@ cover source replacement, user edits, invalid receipts, and recovery failures.
 | Manifest pass | The source matches its generated inventory | A correct design or a clean remote checkout |
 | Test pass | The exercised local contracts passed | Untested platforms, live services, or untested inputs |
 | Runtime pass | A local Codex client advertises the requested schema and capabilities | Account access, effective precedence, server behavior, or model quality |
+| Native discovery pass | A fresh local prompt exposes current instructions and expected skill identities | Skill activation, effective settings of another chat, or model quality |
 | Setup health pass | Managed links and owned settings are healthy now | Future host rewrites or user changes |
 | Reproducible package pass | The current source packages deterministically | Deployment, publication, or runtime behavior |
 
@@ -76,6 +90,13 @@ select a model. The scan cannot judge writing quality or identify an author.
 The skill scan checks
 entrypoints and local references; it cannot prove that a running task chose a
 skill or that the skill improved the result.
+
+Checkpoint validation with an explicit file list checks only that selection
+and its path components. Unrelated directory links do not invalidate the
+packet; selected redirects and paths outside the root still fail. A complete
+source selection during checkpoint creation retains full inventory checks.
+This scope is distinct from package verification, which always inventories
+the distributable source.
 
 ## Reporting limits
 

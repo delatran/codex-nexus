@@ -8,6 +8,7 @@ API request.  It reports local client advertisements as observations.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -452,6 +453,9 @@ def _base_report() -> dict[str, Any]:
         "ok": False,
         "schema": SCHEMA_VERSION,
         "model": MODEL_SLUG,
+        "observation_scope": "source_configuration_compatibility",
+        "effective_session_verified": False,
+        "source_sha256": None,
         "selected": {},
         "observed": {"context": None, "features": {}},
         "checks": [],
@@ -723,6 +727,9 @@ def _failure(
         "ok": False,
         "schema": SCHEMA_VERSION,
         "model": MODEL_SLUG,
+        "observation_scope": "source_configuration_compatibility",
+        "effective_session_verified": False,
+        "source_sha256": None,
         "selected": {},
         "observed": {"context": None, "features": {}},
         "runtime": runtime.public_record() if runtime is not None else None,
@@ -801,17 +808,58 @@ def _probe_failure(
     )
 
 
-def inspect_runtime(root: Path | str, codex: str | os.PathLike[str] | Runtime | Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """Inspect project TOML, local model catalog, and feature state."""
+def _installed_configuration(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Compare source-owned values without exposing private user settings."""
+
+    from .config_install import LEGACY_KEY_PATHS, _flatten, _get, _same_value
+
+    observation: dict[str, Any] = {
+        "scope": "user_configuration_file",
+        "status": "not_observed",
+        "target_sha256": None,
+        "drift_keys": [],
+        "effective_session_verified": False,
+    }
+    try:
+        raw = (_home(None) / "config.toml").read_bytes()
+        observation["target_sha256"] = hashlib.sha256(raw).hexdigest()
+        installed = tomllib.loads(raw.decode("utf-8"))
+    except FileNotFoundError:
+        observation["status"] = "missing"
+        return observation
+    except (OSError, UnicodeError, ValueError):
+        observation["status"] = "invalid"
+        return observation
+    drift = {
+        key for key, desired in _flatten(config).items()
+        if not _get(installed, key)[0] or not _same_value(_get(installed, key)[1], desired)
+    }
+    drift.update(key for key in LEGACY_KEY_PATHS if _get(installed, key)[0])
+    observation["drift_keys"] = sorted(drift)
+    observation["status"] = "drift" if drift else "matches_source"
+    return observation
+
+
+def inspect_runtime(
+    root: Path | str,
+    codex: str | os.PathLike[str] | Runtime | Mapping[str, Any] | None = None,
+    *,
+    discovery: bool = False,
+) -> dict[str, Any]:
+    """Inspect source compatibility, with optional native prompt discovery."""
 
     try:
         root_path = _safe_project_root(root)
     except (OSError, ValueError, RuntimeError) as exc:
         return _failure(f"project root cannot be used: {type(exc).__name__}")
     try:
-        config = _load_toml(root_path / ".codex" / "config.toml")
-    except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
+        source_path = root_path / ".codex" / "config.toml"
+        source_raw = source_path.read_bytes()
+        config = _mapping(tomllib.loads(source_raw.decode("utf-8")), "project configuration")
+    except (OSError, UnicodeError, ValueError) as exc:
         return _failure(f"configuration cannot be loaded: {type(exc).__name__}")
+
+    source_sha256 = hashlib.sha256(source_raw).hexdigest()
 
     source_report = _base_report()
     _validate_configuration(source_report, config)
@@ -821,14 +869,52 @@ def inspect_runtime(root: Path | str, codex: str | os.PathLike[str] | Runtime | 
             check="configuration-contract",
         )
         failure["selected"] = _selected_from_config(config)
+        failure["source_sha256"] = source_sha256
         failure["configuration_errors"] = source_report["errors"]
         return failure
+
+    selected = codex if isinstance(codex, (Runtime, Mapping)) else resolve_runtime(codex)
+    report = _inspect_capabilities(root_path, config, selected)
+    report["source_sha256"] = source_sha256
+    report["installed_configuration"] = (
+        {"status": "not_observed", "reason": "offline_fixture", "effective_session_verified": False}
+        if isinstance(selected, Mapping)
+        else _installed_configuration(config)
+    )
+    installed_status = report["installed_configuration"]["status"]
+    if installed_status in {"drift", "missing", "invalid"}:
+        report["warnings"].append({
+            "check": "installed-configuration",
+            "detail": "user configuration differs or is unavailable; source compatibility does not verify installed defaults or the effective session",
+        })
+    if discovery:
+        from .discovery import inspect_discovery
+
+        report["discovery"] = inspect_discovery(root_path, selected)
+    try:
+        source_unchanged = source_path.read_bytes() == source_raw
+    except OSError:
+        source_unchanged = False
+    _check(report, "configuration-freshness", source_unchanged, "source configuration must remain unchanged during inspection")
+    report["ok"] = not report["errors"]
+    if discovery:
+        report["compatibility_ok"] = report["ok"]
+        report["ok"] = report["ok"] and report["discovery"]["ok"]
+    return report
+
+
+def _inspect_capabilities(
+    root_path: Path,
+    config: Mapping[str, Any],
+    codex: Runtime | Mapping[str, Any],
+) -> dict[str, Any]:
+    """Probe one selected client without inferring its effective session."""
 
     fixture: Mapping[str, Any] | None = codex if isinstance(codex, Mapping) else None
     if isinstance(codex, Runtime):
         runtime = codex
     else:
-        runtime = resolve_runtime(explicit=None if fixture is not None else codex)
+        runtime = Runtime(None, "unavailable", None, False, False, False, "offline fixture")
     if runtime.executable is None and fixture is None:
         return _failure(runtime.reason or "runtime executable is unavailable", runtime)
 
